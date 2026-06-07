@@ -24,10 +24,10 @@ git push -u origin main
 
 1. Create a **Web Service** on [Render](https://render.com)
 2. Connect your GitHub repo
-3. Settings:
-   - **Root Directory**: `backend`
-   - **Build Command**: `mvn -B clean package -DskipTests`
-   - **Start Command**: `java -jar target/job-board-1.0.0.jar`
+3. Settings (Docker — Render does not support native Java runtime):
+   - **Runtime**: Docker
+   - **Dockerfile Path**: `backend/Dockerfile`
+   - **Docker Context**: `backend`
    - **Environment**: `prod`
 
 4. Environment Variables:

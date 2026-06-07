@@ -1,0 +1,7 @@
+target/
+uploads/
+*.log
+mail-local.yml
+cloudinary-local.yml
+mysql-local.yml
+.mvn/wrapper/maven-wrapper.jar
