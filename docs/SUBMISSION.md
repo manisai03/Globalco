@@ -79,15 +79,27 @@ git push -u origin main
 
 ### Step 4 — GitHub Secrets (for CI/CD auto-deploy)
 
-Go to **GitHub repo → Settings → Secrets and variables → Actions**:
+Go to **GitHub repo → Settings → Secrets and variables → Actions → New repository secret**:
 
 | Secret | Where to get it |
 |--------|-----------------|
-| `RENDER_DEPLOY_HOOK` | Render deploy hook URL |
-| `VERCEL_TOKEN` | Vercel → Account Settings → Tokens |
-| `VERCEL_ORG_ID` | Vercel project settings (`.vercel/project.json` after `vercel link`) |
+| `RENDER_DEPLOY_HOOK` | Render → Service → Settings → Deploy Hook |
+| `VERCEL_TOKEN` | [Vercel Tokens](https://vercel.com/account/settings/tokens) → Create Token |
+| `VERCEL_ORG_ID` | Vercel project → Settings → General (or run `vercel link` locally, see `frontend/.vercel/project.json`) |
 | `VERCEL_PROJECT_ID` | Same as above |
-| `VITE_API_URL` | Your Render backend URL |
+| `VITE_API_URL` | Your Render backend URL, e.g. `https://globalco-job-board-api.onrender.com` |
+
+**Get Vercel Org/Project IDs locally (one-time):**
+```bash
+cd frontend
+npm install -g vercel
+vercel link
+# Follow prompts to link to your Vercel project
+cat .vercel/project.json
+# Copy orgId → VERCEL_ORG_ID, projectId → VERCEL_PROJECT_ID
+```
+
+> Until these secrets are set, the deploy workflow **skips** Vercel with a warning instead of failing.
 
 After secrets are set, every push to `main` triggers:
 - **CI** — build & test backend + frontend
