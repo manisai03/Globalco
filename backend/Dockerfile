@@ -11,4 +11,5 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 COPY --from=build /app/target/job-board-1.0.0.jar app.jar
 EXPOSE 8080
-ENTRYPOINT ["java", "-Dserver.port=${PORT:-8080}", "-jar", "app.jar"]
+# Spring Boot reads PORT from env via application.yml (server.port: ${PORT:8080})
+ENTRYPOINT ["java", "-jar", "app.jar"]
