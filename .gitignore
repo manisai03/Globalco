@@ -19,6 +19,7 @@ backend/target/
 frontend/.env
 backend/mail-local.yml
 backend/cloudinary-local.yml
+backend/mysql-local.yml
 
 # Uploads
 backend/uploads/

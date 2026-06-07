@@ -1,0 +1,13 @@
+# Copy to mysql-local.yml and set your MySQL credentials (file is gitignored).
+#
+# Local MySQL setup:
+#   1. Install MySQL 8+ (or use XAMPP/WAMP)
+#   2. Create database: CREATE DATABASE jobboard;
+#   3. Optional: run ../database/schema.sql
+#   4. Start backend with: SPRING_PROFILES_ACTIVE=mysql
+#
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/jobboard?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: your-mysql-password
