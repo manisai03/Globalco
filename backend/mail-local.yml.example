@@ -1,0 +1,28 @@
+# Copy to mail-local.yml and fill in your SMTP credentials (file is gitignored).
+#
+# Brevo (recommended): SMTP & API → SMTP → copy login and SMTP key
+#   Host: smtp-relay.brevo.com  Port: 587
+#   Username: your-login@smtp-brevo.com
+#   Password: your SMTP key
+#   From: a verified sender email in your Brevo account
+#
+spring:
+  mail:
+    host: smtp-relay.brevo.com
+    port: 587
+    username: your-login@smtp-brevo.com
+    password: your-smtp-key
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: false
+          starttls:
+            enable: true
+            required: true
+
+app:
+  mail:
+    from: your-verified-sender@gmail.com

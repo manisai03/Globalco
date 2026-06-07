@@ -1,0 +1,10 @@
+# Copy to cloudinary-local.yml and fill in credentials (file is gitignored).
+# Dashboard: https://console.cloudinary.com → Settings → API Keys
+#   Cloud name, API Key, API Secret
+#
+app:
+  cloudinary:
+    cloud-name: your-cloud-name
+    api-key: your-api-key
+    api-secret: your-api-secret
+    folder: globalco-jobs/avatars
