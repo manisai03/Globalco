@@ -16,7 +16,8 @@ app:
     secret: ${JWT_SECRET:globalco-job-board-super-secret-key-change-in-production-min-256-bits}
     expiration-ms: 86400000
   cors:
-    allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000}
+    # Also allows http://localhost:* and https://*.vercel.app via SecurityConfig patterns
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000,https://*.vercel.app}
   openai:
     api-key: ${OPENAI_API_KEY:}
     enabled: ${OPENAI_ENABLED:false}

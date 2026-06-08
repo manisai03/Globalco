@@ -1,7 +1,7 @@
 import { authStorage } from './authStorage';
+import { API_BASE_URL } from './api';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-const WS_URL = `${API_URL.replace(/^http/, 'ws')}/ws/chat`;
+const WS_URL = `${API_BASE_URL.replace(/^http/, 'ws')}/ws/chat`;
 
 class ChatSocket {
   constructor() {

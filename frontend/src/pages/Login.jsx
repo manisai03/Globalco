@@ -5,6 +5,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 import toast from 'react-hot-toast';
+import { getApiErrorMessage } from '../utils/apiError';
+import { normalizeEmail } from '../utils/normalize';
 
 
 
@@ -52,7 +54,7 @@ export default function Login() {
 
     try {
 
-      const user = await login(form.email, form.password);
+      const user = await login(normalizeEmail(form.email), form.password);
 
       toast.success('Welcome back!');
 
@@ -60,7 +62,7 @@ export default function Login() {
 
     } catch (err) {
 
-      toast.error(err.response?.data?.message || 'Login failed');
+      toast.error(getApiErrorMessage(err, 'Login failed'));
 
     } finally {
 
@@ -92,11 +94,19 @@ export default function Login() {
 
             required
 
+            autoComplete="email"
+
+            autoCapitalize="none"
+
+            autoCorrect="off"
+
+            inputMode="email"
+
             value={form.email}
 
             onChange={(e) => setForm({ ...form, email: e.target.value })}
 
-            className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-900"
+            className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-base dark:border-slate-700 dark:bg-slate-900"
 
             placeholder="you@email.com"
 
@@ -120,11 +130,13 @@ export default function Login() {
 
             required
 
+            autoComplete="current-password"
+
             value={form.password}
 
             onChange={(e) => setForm({ ...form, password: e.target.value })}
 
-            className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-900"
+            className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-base dark:border-slate-700 dark:bg-slate-900"
 
           />
 

@@ -9,7 +9,10 @@ import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebSocket
@@ -24,10 +27,17 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        List<String> patterns = new ArrayList<>(List.of(
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+                "https://*.vercel.app"
+        ));
+        Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .forEach(patterns::add);
         registry.addHandler(chatWebSocketHandler, "/ws/chat")
                 .addInterceptors(jwtHandshakeInterceptor)
-                .setAllowedOrigins(Arrays.stream(allowedOrigins.split(","))
-                        .map(String::trim)
-                        .toArray(String[]::new));
+                .setAllowedOriginPatterns(patterns.stream().distinct().collect(Collectors.toList()));
     }
 }

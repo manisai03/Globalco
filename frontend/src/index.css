@@ -19,6 +19,13 @@ body {
   @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
 }
 
+/* Prevent iOS Safari zoom on input focus (requires 16px+ font) */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
 @layer components {
   .card {
     @apply rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900;

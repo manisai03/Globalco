@@ -6,6 +6,8 @@ import api, { unwrap } from '../services/api';
 
 import toast from 'react-hot-toast';
 import { validateRegister } from '../utils/validation';
+import { getApiErrorMessage } from '../utils/apiError';
+import { normalizeEmail, normalizePhone, trimFormFields } from '../utils/normalize';
 
 import { Briefcase, Building2 } from 'lucide-react';
 
@@ -39,7 +41,12 @@ export default function Register() {
 
     e.preventDefault();
 
-    const errors = validateRegister(form, isRecruiter);
+    const payload = trimFormFields({
+      ...form,
+      email: normalizeEmail(form.email),
+      phone: normalizePhone(form.phone),
+    });
+    const errors = validateRegister(payload, isRecruiter);
 
     if (Object.keys(errors).length > 0) {
 
@@ -53,7 +60,7 @@ export default function Register() {
 
     try {
 
-      const data = unwrap(await api.post('/api/auth/register', { ...form, accountType }));
+      const data = unwrap(await api.post('/api/auth/register', { ...payload, accountType }));
 
       toast.success(data.message || 'Account created! Please sign in.');
 
@@ -61,7 +68,7 @@ export default function Register() {
 
     } catch (err) {
 
-      toast.error(err.response?.data?.message || 'Registration failed');
+      toast.error(getApiErrorMessage(err, 'Registration failed'));
 
     } finally {
 
@@ -111,7 +118,13 @@ export default function Register() {
 
           placeholder={opts.placeholder}
 
-          className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-900"
+          autoComplete={opts.autoComplete}
+
+          autoCapitalize={opts.autoCapitalize}
+
+          inputMode={opts.inputMode}
+
+          className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-base dark:border-slate-700 dark:bg-slate-900"
 
         />
 
@@ -181,11 +194,11 @@ export default function Register() {
 
         {field('fullName', 'Full Name', { required: true })}
 
-        {field('email', 'Email', { type: 'email', required: true })}
+        {field('email', 'Email', { type: 'email', required: true, autoComplete: 'email', autoCapitalize: 'none', inputMode: 'email' })}
 
-        {field('password', 'Password', { type: 'password', required: true })}
+        {field('password', 'Password', { type: 'password', required: true, autoComplete: 'new-password' })}
 
-        {field('phone', 'Phone')}
+        {field('phone', 'Phone', { type: 'tel', inputMode: 'tel', autoComplete: 'tel' })}
 
         {field('location', 'Location', { placeholder: 'Hyderabad' })}
 

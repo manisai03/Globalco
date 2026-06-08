@@ -43,6 +43,9 @@ public class AuthService {
 
     @Transactional
     public RegisterResponse register(RegisterRequest request) {
+        request.setEmail(trim(request.getEmail()));
+        request.setPhone(sanitizePhone(request.getPhone()));
+        request.setFullName(trim(request.getFullName()));
         if (accountService.existsByEmail(request.getEmail())) {
             throw new BadRequestException("Email already registered");
         }
@@ -98,6 +101,7 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request) {
+        request.setEmail(trim(request.getEmail()));
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword()));
 
@@ -163,5 +167,22 @@ public class AuthService {
 
         resetOtp.setUsed(true);
         otpRepository.save(resetOtp);
+    }
+
+    private static String trim(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    /** Strips formatting from mobile autofill e.g. (91) 98765-43210 → 919876543210 */
+    private static String sanitizePhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return null;
+        }
+        String cleaned = phone.trim().replaceAll("[\\s().-]", "");
+        if (cleaned.startsWith("+")) {
+            return "+" + cleaned.substring(1).replaceAll("\\D", "");
+        }
+        cleaned = cleaned.replaceAll("\\D", "");
+        return cleaned.isEmpty() ? null : cleaned;
     }
 }

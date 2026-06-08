@@ -1,40 +1,79 @@
 /**
- * Uses sessionStorage so each browser tab keeps its own login session.
- * This lets you test Admin in one tab and Candidate in another without overwriting each other.
+ * Persists auth per tab. Falls back to localStorage if sessionStorage is blocked
+ * (some mobile browsers / private mode).
  */
-const storage = sessionStorage;
+const primary = sessionStorage;
+const fallback = localStorage;
+const PREFIX = 'jb_';
+
+function read(store, key) {
+  try {
+    return store.getItem(PREFIX + key);
+  } catch {
+    return null;
+  }
+}
+
+function write(store, key, value) {
+  try {
+    store.setItem(PREFIX + key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function activeStore() {
+  if (read(primary, 'token') || read(fallback, 'token')) {
+    return read(primary, 'token') ? primary : fallback;
+  }
+  return primary;
+}
 
 export const authStorage = {
   getToken() {
-    return storage.getItem('token');
+    return read(primary, 'token') || read(fallback, 'token');
   },
 
   setToken(token) {
-    storage.setItem('token', token);
+    write(primary, 'token', token) || write(fallback, 'token', token);
   },
 
   getUser() {
-    const raw = storage.getItem('user');
+    const raw = read(primary, 'user') || read(fallback, 'user');
     return raw ? JSON.parse(raw) : null;
   },
 
   setUser(user) {
-    storage.setItem('user', JSON.stringify(user));
+    const json = JSON.stringify(user);
+    write(primary, 'user', json) || write(fallback, 'user', json);
   },
 
   clear() {
-    storage.removeItem('token');
-    storage.removeItem('user');
+    for (const store of [primary, fallback]) {
+      try {
+        store.removeItem(PREFIX + 'token');
+        store.removeItem(PREFIX + 'user');
+      } catch { /* ignore */ }
+    }
+    // Legacy keys
+    try {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    } catch { /* ignore */ }
   },
 };
 
-// One-time migration from old localStorage (shared across tabs)
+// One-time migration from old unprefixed keys
 export function migrateFromLocalStorage() {
-  if (!authStorage.getToken() && localStorage.getItem('token')) {
-    authStorage.setToken(localStorage.getItem('token'));
-    const user = localStorage.getItem('user');
-    if (user) authStorage.setUser(JSON.parse(user));
+  const legacyToken = localStorage.getItem('token');
+  const legacyUser = localStorage.getItem('user');
+  if (!authStorage.getToken() && legacyToken) {
+    authStorage.setToken(legacyToken);
+    if (legacyUser) authStorage.setUser(JSON.parse(legacyUser));
   }
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
+  try {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+  } catch { /* ignore */ }
 }

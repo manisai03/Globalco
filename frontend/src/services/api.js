@@ -1,11 +1,17 @@
 import axios from 'axios';
 import { authStorage } from './authStorage';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+/** Production Render API — used when VITE_API_URL is missing from the Vercel build. */
+const PROD_API_URL = 'https://globalco-job-board-api-vpee.onrender.com';
+
+export const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? PROD_API_URL : 'http://localhost:8080');
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
+  timeout: 60000,
 });
 
 api.interceptors.request.use((config) => {
