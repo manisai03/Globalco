@@ -25,10 +25,16 @@ public class DatabaseConfig {
     @ConfigurationProperties("spring.datasource.hikari")
     public DataSource dataSource(DataSourceProperties properties) {
         String url = properties.getUrl();
+        if (url == null || (!url.startsWith("mysql://") && !url.startsWith("jdbc:mysql:"))) {
+            return properties.initializeDataSourceBuilder()
+                    .type(HikariDataSource.class)
+                    .build();
+        }
+
         String username = properties.getUsername();
         String password = properties.getPassword();
 
-        if (url != null && url.startsWith("mysql://")) {
+        if (url.startsWith("mysql://")) {
             Matcher matcher = MYSQL_URI.matcher(url);
             if (matcher.matches()) {
                 username = matcher.group(1);
@@ -44,7 +50,7 @@ public class DatabaseConfig {
             }
         }
 
-        if (url != null && url.contains("railway.internal")) {
+        if (url.contains("railway.internal")) {
             log.error("DATABASE_URL uses Railway internal host (railway.internal). "
                     + "Render cannot reach it. Use Railway Public TCP proxy host instead "
                     + "(Railway MySQL -> Connect -> Public Network).");
