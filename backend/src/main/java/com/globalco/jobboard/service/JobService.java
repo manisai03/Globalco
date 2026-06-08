@@ -32,6 +32,7 @@ public class JobService {
     private final NotificationService notificationService;
     private final AiService aiService;
 
+    @Transactional(readOnly = true)
     public PageResponse<JobResponse> searchJobs(
             String search, String location, String jobType, String experienceLevel,
             String category, BigDecimal minSalary, BigDecimal maxSalary, String status,
@@ -56,12 +57,14 @@ public class JobService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
     public List<JobResponse> getFeaturedJobs(User currentUser) {
         return jobRepository.findTop6ByFeaturedTrueAndStatusOrderByCreatedAtDesc("OPEN").stream()
                 .map(job -> mapWithUserContext(job, currentUser))
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public JobResponse getJobById(Long id, User currentUser) {
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found"));

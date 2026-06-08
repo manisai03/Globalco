@@ -3,6 +3,8 @@ package com.globalco.jobboard.model;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.NotFound;
+import org.hibernate.annotations.NotFoundAction;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
@@ -52,8 +54,9 @@ public class Job {
     @Builder.Default
     private Boolean featured = false;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "admin_id", nullable = false)
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "admin_id")
+    @NotFound(action = NotFoundAction.IGNORE)
     private Admin createdBy;
 
     @CreationTimestamp

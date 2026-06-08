@@ -32,8 +32,8 @@ export default function Jobs() {
       const data = unwrap(res);
       setJobs(data.content);
       setTotal(data.totalElements);
-    } catch {
-      toast.error('Failed to load jobs');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to load jobs');
     } finally {
       setLoading(false);
     }
