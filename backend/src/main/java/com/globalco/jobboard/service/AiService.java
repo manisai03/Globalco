@@ -2,6 +2,7 @@ package com.globalco.jobboard.service;
 
 import com.globalco.jobboard.dto.request.AiJobDescriptionRequest;
 import com.globalco.jobboard.dto.response.MatchBreakdownResponse;
+import com.globalco.jobboard.exception.BadRequestException;
 import com.globalco.jobboard.model.Job;
 import com.globalco.jobboard.model.User;
 import lombok.extern.slf4j.Slf4j;
@@ -133,9 +134,14 @@ public class AiService {
     }
 
     private String buildTemplateDescription(AiJobDescriptionRequest req) {
-        String company = req.getCompany() != null ? req.getCompany() : "Our Company";
-        String location = req.getLocation() != null ? req.getLocation() : "Hyderabad, India";
-        String level = req.getExperienceLevel() != null ? req.getExperienceLevel() : "Mid-Level";
+        String company = req.getCompany() != null ? req.getCompany().trim() : "";
+        if (company.isBlank()) {
+            throw new BadRequestException("Company name is required for job descriptions");
+        }
+        String location = req.getLocation() != null && !req.getLocation().isBlank()
+                ? req.getLocation().trim() : "Hyderabad, India";
+        String level = req.getExperienceLevel() != null && !req.getExperienceLevel().isBlank()
+                ? req.getExperienceLevel().trim() : "Mid-Level";
 
         return """
                 **%s** — %s

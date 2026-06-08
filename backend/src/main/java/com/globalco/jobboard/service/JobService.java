@@ -118,7 +118,7 @@ public class JobService {
     public JobResponse createJob(JobRequest request, Admin admin) {
         Job job = Job.builder()
                 .title(request.getTitle())
-                .company(request.getCompany())
+                .company(resolveCompany(request, admin))
                 .description(request.getDescription())
                 .location(request.getLocation())
                 .salaryMin(request.getSalaryMin())
@@ -149,7 +149,7 @@ public class JobService {
         assertJobOwner(job, admin);
 
         job.setTitle(request.getTitle());
-        job.setCompany(request.getCompany());
+        job.setCompany(resolveCompany(request, admin));
         job.setDescription(request.getDescription());
         job.setLocation(request.getLocation());
         job.setSalaryMin(request.getSalaryMin());
@@ -187,6 +187,16 @@ public class JobService {
         assertJobOwner(job, admin);
         job.setStatus("OPEN");
         return EntityMapper.toJobResponse(jobRepository.save(job));
+    }
+
+    private String resolveCompany(JobRequest request, Admin admin) {
+        if (request.getCompany() != null && !request.getCompany().isBlank()) {
+            return request.getCompany().trim();
+        }
+        if (admin.getCompanyName() != null && !admin.getCompanyName().isBlank()) {
+            return admin.getCompanyName().trim();
+        }
+        throw new BadRequestException("Company name is required. Add it in your Profile or the job form.");
     }
 
     private void assertJobOwner(Job job, Admin admin) {

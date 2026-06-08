@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useState, useCallback } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import api, { unwrap } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ApplicationDetailModal from '../components/ApplicationDetailModal';
 import ApplicantStatusChart from '../components/ApplicantStatusChart';
@@ -17,11 +18,31 @@ import { daysAgo, formatSalary } from '../utils/formatters';
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4'];
 
-const emptyJob = {
-  title: '', company: 'Globalco Technologies', description: '', location: 'Hyderabad',
-  salaryMin: '', salaryMax: '', experienceLevel: 'Mid-Level', jobType: 'Full-time',
-  category: 'Engineering', skills: '', featured: false,
-};
+function buildJobDefaults(user) {
+  return {
+    title: '',
+    company: user?.companyName?.trim() || '',
+    description: '',
+    location: user?.location?.trim() || '',
+    salaryMin: '',
+    salaryMax: '',
+    experienceLevel: 'Mid-Level',
+    jobType: 'Full-time',
+    category: 'Engineering',
+    skills: '',
+    featured: false,
+  };
+}
+
+function buildAiDefaults(user) {
+  return {
+    jobTitle: '',
+    skills: '',
+    company: user?.companyName?.trim() || '',
+    location: user?.location?.trim() || '',
+    experienceLevel: 'Mid-Level',
+  };
+}
 
 const statusColors = {
   PENDING: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
@@ -45,14 +66,15 @@ const DASHBOARD_TABS = [
 const NAV_ONLY_TABS = ['messages', 'profile'];
 
 export default function AdminDashboard() {
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [dashboard, setDashboard] = useState(null);
   const [applicants, setApplicants] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [tab, setTab] = useState(searchParams.get('tab') || 'overview');
-  const [jobForm, setJobForm] = useState(emptyJob);
+  const [jobForm, setJobForm] = useState(() => buildJobDefaults(user));
   const [editingId, setEditingId] = useState(null);
-  const [aiForm, setAiForm] = useState({ jobTitle: '', skills: '', company: 'Globalco Technologies', location: 'Hyderabad' });
+  const [aiForm, setAiForm] = useState(() => buildAiDefaults(user));
   const [loading, setLoading] = useState(true);
   const [selectedAppId, setSelectedAppId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,6 +95,20 @@ export default function AdminDashboard() {
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    if (!user || editingId) return;
+    setJobForm((prev) => ({
+      ...prev,
+      company: prev.company || user.companyName?.trim() || '',
+      location: prev.location || user.location?.trim() || '',
+    }));
+    setAiForm((prev) => ({
+      ...prev,
+      company: prev.company || user.companyName?.trim() || '',
+      location: prev.location || user.location?.trim() || '',
+    }));
+  }, [user, editingId]);
+
   const switchTab = (key, extra = {}) => {
     setTab(key);
     const params = key === 'overview' ? {} : { tab: key, ...extra };
@@ -84,10 +120,10 @@ export default function AdminDashboard() {
     setTab(t);
   }, [searchParams]);
 
-  const startNewJob = () => {
+  const startNewJob = useCallback(() => {
     setEditingId(null);
-    setJobForm(emptyJob);
-  };
+    setJobForm(buildJobDefaults(user));
+  }, [user]);
 
   const saveJob = async (e) => {
     e.preventDefault();
@@ -137,14 +173,37 @@ export default function AdminDashboard() {
   };
 
   const generateDescription = async () => {
+    if (!aiForm.jobTitle?.trim() || !aiForm.skills?.trim()) {
+      return toast.error('Job title and skills are required');
+    }
+    if (!aiForm.company?.trim()) {
+      return toast.error('Company name is required — set it in Profile or the field below');
+    }
     try {
       const res = await api.post('/api/ai/generate-job-description', aiForm);
-      setJobForm((f) => ({ ...f, title: aiForm.jobTitle, skills: aiForm.skills, description: unwrap(res).description }));
-      setTab('jobs');
-      toast.success('AI description generated!');
-    } catch {
-      toast.error('AI generation failed');
+      setJobForm((f) => ({
+        ...f,
+        title: aiForm.jobTitle,
+        skills: aiForm.skills,
+        company: aiForm.company,
+        location: aiForm.location || f.location,
+        experienceLevel: aiForm.experienceLevel || f.experienceLevel,
+        description: unwrap(res).description,
+      }));
+      switchTab('jobs');
+      toast.success('AI description generated with your company name!');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'AI generation failed');
     }
+  };
+
+  const syncCompanyFromProfile = () => {
+    if (!user?.companyName?.trim()) {
+      return toast.error('Add your company name in Profile first');
+    }
+    setJobForm((f) => ({ ...f, company: user.companyName.trim(), location: user.location?.trim() || f.location }));
+    setAiForm((f) => ({ ...f, company: user.companyName.trim(), location: user.location?.trim() || f.location }));
+    toast.success('Company synced from profile');
   };
 
   const filteredApplicants = applicants.filter((app) => {
@@ -277,8 +336,24 @@ export default function AdminDashboard() {
                   <input value={jobForm.title} onChange={(e) => setJobForm({ ...jobForm, title: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800" required placeholder="e.g. Senior Software Engineer" />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Company *</label>
-                  <input value={jobForm.company} onChange={(e) => setJobForm({ ...jobForm, company: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800" required />
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-sm font-medium">Company *</label>
+                    <button type="button" onClick={syncCompanyFromProfile} className="text-xs font-medium text-primary-600 hover:underline">
+                      Sync from profile
+                    </button>
+                  </div>
+                  <input
+                    value={jobForm.company}
+                    onChange={(e) => setJobForm({ ...jobForm, company: e.target.value })}
+                    className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800"
+                    required
+                    placeholder="Your recruiting company (e.g. Xceed Technologies)"
+                  />
+                  {!jobForm.company && (
+                    <p className="mt-1 text-xs text-amber-600">
+                      Set company in <Link to="/admin?tab=profile" className="underline">Profile</Link> or enter it here
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="text-sm font-medium">Location *</label>
@@ -505,11 +580,33 @@ export default function AdminDashboard() {
             <Sparkles className="h-5 w-5 text-primary-600" />
             <h2 className="font-semibold">AI Job Description Generator</h2>
           </div>
-          <p className="mt-2 text-sm text-slate-500">Enter job title and skills to generate a professional description.</p>
+          <p className="mt-2 text-sm text-slate-500">
+            Descriptions use your recruiting company (not Globalco). Pre-filled from your profile.
+          </p>
           <div className="mt-4 space-y-3">
-            <input placeholder="Job Title" value={aiForm.jobTitle} onChange={(e) => setAiForm({ ...aiForm, jobTitle: e.target.value })} className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" />
-            <input placeholder="Skills (comma separated)" value={aiForm.skills} onChange={(e) => setAiForm({ ...aiForm, skills: e.target.value })} className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" />
-            <button onClick={generateDescription} className="rounded-lg bg-primary-600 px-6 py-2 font-medium text-white hover:bg-primary-700">
+            <div>
+              <label className="text-xs font-medium text-slate-500">Job title *</label>
+              <input placeholder="e.g. Java Full Stack Developer" value={aiForm.jobTitle} onChange={(e) => setAiForm({ ...aiForm, jobTitle: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" required />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500">Company *</label>
+              <input placeholder="Your company name" value={aiForm.company} onChange={(e) => setAiForm({ ...aiForm, company: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" required />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500">Location</label>
+              <input placeholder="Hyderabad / Remote" value={aiForm.location} onChange={(e) => setAiForm({ ...aiForm, location: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500">Experience level</label>
+              <select value={aiForm.experienceLevel} onChange={(e) => setAiForm({ ...aiForm, experienceLevel: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+                {EXPERIENCE_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500">Skills (comma separated) *</label>
+              <input placeholder="Java, Spring Boot, React" value={aiForm.skills} onChange={(e) => setAiForm({ ...aiForm, skills: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" required />
+            </div>
+            <button type="button" onClick={generateDescription} className="rounded-lg bg-primary-600 px-6 py-2 font-medium text-white hover:bg-primary-700">
               Generate Description
             </button>
           </div>
