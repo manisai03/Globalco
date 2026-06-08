@@ -38,6 +38,10 @@ public class BrevoApiEmailSender {
         if (!isConfigured()) {
             throw new BadRequestException("Brevo API key is not configured. Set BREVO_API_KEY on Render.");
         }
+        if (apiKey.startsWith("xsmtpsib-")) {
+            throw new BadRequestException(
+                    "BREVO_API_KEY is an SMTP key (xsmtpsib-). Create an API key (xkeysib-) in Brevo → SMTP & API → API Keys.");
+        }
 
         Map<String, Object> payload = Map.of(
                 "sender", Map.of("email", fromEmail, "name", "Globalco Jobs"),
@@ -57,7 +61,11 @@ public class BrevoApiEmailSender {
             log.info("OTP email sent via Brevo API to {}", toEmail);
         } catch (RestClientResponseException ex) {
             log.error("Brevo API rejected email to {}: {} {}", toEmail, ex.getStatusCode(), ex.getResponseBodyAsString());
-            throw new BadRequestException("Failed to send OTP email. Check BREVO_API_KEY and verify sender email in Brevo.");
+            if (ex.getStatusCode().value() == 401) {
+                throw new BadRequestException(
+                        "Invalid BREVO_API_KEY. Use an API key from Brevo → SMTP & API → API Keys (starts with xkeysib-), not an SMTP key.");
+            }
+            throw new BadRequestException("Failed to send OTP email. Verify BREVO_API_KEY and that MAIL_FROM is a verified Brevo sender.");
         } catch (Exception ex) {
             log.error("Brevo API request failed for {}: {}", toEmail, ex.getMessage());
             throw new BadRequestException("Failed to send OTP email. Please try again later.");
