@@ -23,23 +23,82 @@ public class LegacySchemaMigration implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (!columnExists("jobs", "created_by")) {
-            return;
-        }
-
-        log.info("Detected legacy schema — migrating to separate users/admins tables");
-
         try {
+            // Always run — Hibernate may add account_* columns without dropping legacy user_id.
+            repairNotificationsSchema();
+
+            if (!columnExists("jobs", "created_by")) {
+                return;
+            }
+
+            log.info("Detected legacy schema — migrating to separate users/admins tables");
             migrateAdminsFromUsers();
             migrateJobs();
             migrateMessages();
-            migrateNotifications();
             cleanupUsersTable();
             jdbcTemplate.execute("DROP TABLE IF EXISTS roles");
             log.info("Legacy schema migration completed");
         } catch (Exception ex) {
-            log.error("Legacy schema migration failed: {}", ex.getMessage(), ex);
+            log.error("Schema migration failed: {}", ex.getMessage(), ex);
         }
+    }
+
+    /**
+     * Drops legacy notifications.user_id when account_type/account_id are in use.
+     * Required on prod DBs where ddl-auto added new columns but left user_id NOT NULL.
+     */
+    private void repairNotificationsSchema() {
+        if (!tableExists("notifications") || !columnExists("notifications", "user_id")) {
+            return;
+        }
+
+        log.info("Repairing notifications table — migrating user_id to account_id and dropping user_id");
+
+        addColumnIfMissing("notifications", "account_type", "VARCHAR(10)");
+        addColumnIfMissing("notifications", "account_id", "BIGINT");
+
+        if (tableExists("roles")) {
+            jdbcTemplate.update("""
+                    UPDATE notifications n
+                    INNER JOIN users u ON n.user_id = u.id
+                    INNER JOIN roles r ON u.role_id = r.id
+                    SET n.account_type = IF(r.name = 'ROLE_ADMIN', 'ADMIN', 'USER'),
+                        n.account_id = IF(r.name = 'ROLE_ADMIN',
+                            (SELECT a.id FROM admins a WHERE a.email = u.email LIMIT 1),
+                            u.id)
+                    WHERE n.account_id IS NULL
+                    """);
+
+            jdbcTemplate.update("""
+                    UPDATE notifications n
+                    INNER JOIN users u ON n.user_id = u.id
+                    INNER JOIN admins a ON a.email = u.email
+                    SET n.account_id = a.id
+                    WHERE n.account_type = 'ADMIN' AND n.account_id IS NULL
+                    """);
+        } else if (tableExists("admins")) {
+            jdbcTemplate.update("""
+                    UPDATE notifications n
+                    INNER JOIN users u ON n.user_id = u.id
+                    INNER JOIN admins a ON a.email = u.email
+                    SET n.account_type = 'ADMIN', n.account_id = a.id
+                    WHERE n.account_id IS NULL
+                    """);
+        }
+
+        jdbcTemplate.update("""
+                UPDATE notifications SET account_type = 'USER', account_id = user_id
+                WHERE account_id IS NULL AND user_id IS NOT NULL
+                """);
+
+        jdbcTemplate.update("""
+                UPDATE notifications SET account_type = 'USER'
+                WHERE account_type IS NULL
+                """);
+
+        dropForeignKeys("notifications", "user_id");
+        dropColumnIfExists("notifications", "user_id");
+        log.info("Notifications table repair completed");
     }
 
     private void migrateAdminsFromUsers() {
@@ -131,43 +190,6 @@ public class LegacySchemaMigration implements ApplicationRunner {
 
         dropForeignKeys("messages", "sender_id");
         dropForeignKeys("messages", "receiver_id");
-    }
-
-    private void migrateNotifications() {
-        if (!columnExists("notifications", "user_id") || columnExists("notifications", "account_type")) {
-            return;
-        }
-
-        addColumnIfMissing("notifications", "account_type", "VARCHAR(10)");
-        addColumnIfMissing("notifications", "account_id", "BIGINT");
-
-        if (tableExists("roles")) {
-            jdbcTemplate.update("""
-                    UPDATE notifications n
-                    INNER JOIN users u ON n.user_id = u.id
-                    INNER JOIN roles r ON u.role_id = r.id
-                    SET n.account_type = IF(r.name = 'ROLE_ADMIN', 'ADMIN', 'USER'),
-                        n.account_id = IF(r.name = 'ROLE_ADMIN',
-                            (SELECT a.id FROM admins a WHERE a.email = u.email LIMIT 1),
-                            u.id)
-                    """);
-
-            jdbcTemplate.update("""
-                    UPDATE notifications n
-                    INNER JOIN users u ON n.user_id = u.id
-                    INNER JOIN admins a ON a.email = u.email
-                    SET n.account_id = a.id
-                    WHERE n.account_type = 'ADMIN' AND n.account_id IS NULL
-                    """);
-        }
-
-        jdbcTemplate.update("""
-                UPDATE notifications SET account_type = 'USER', account_id = user_id
-                WHERE account_type IS NULL AND user_id IS NOT NULL
-                """);
-
-        dropForeignKeys("notifications", "user_id");
-        dropColumnIfExists("notifications", "user_id");
     }
 
     private void cleanupUsersTable() {
