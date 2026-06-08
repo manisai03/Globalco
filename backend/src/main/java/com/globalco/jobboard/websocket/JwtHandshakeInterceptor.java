@@ -1,7 +1,7 @@
 package com.globalco.jobboard.websocket;
 
-import com.globalco.jobboard.model.User;
-import com.globalco.jobboard.repository.UserRepository;
+import com.globalco.jobboard.model.AccountType;
+import com.globalco.jobboard.service.AccountService;
 import com.globalco.jobboard.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.server.ServerHttpRequest;
@@ -19,11 +19,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class JwtHandshakeInterceptor implements HandshakeInterceptor {
 
-    public static final String USER_ID_ATTR = "userId";
+    public static final String ACCOUNT_TYPE_ATTR = "accountType";
+    public static final String ACCOUNT_ID_ATTR = "accountId";
 
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
-    private final UserRepository userRepository;
+    private final AccountService accountService;
 
     @Override
     public boolean beforeHandshake(
@@ -43,12 +44,12 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
             if (!jwtService.isTokenValid(token, userDetails)) {
                 return false;
             }
-            User user = userRepository.findByEmail(username)
-                    .orElse(null);
-            if (user == null) {
+            var account = accountService.findByEmail(username).orElse(null);
+            if (account == null) {
                 return false;
             }
-            attributes.put(USER_ID_ATTR, user.getId());
+            attributes.put(ACCOUNT_TYPE_ATTR, account.getAccountType());
+            attributes.put(ACCOUNT_ID_ATTR, account.getId());
             return true;
         } catch (Exception e) {
             return false;
@@ -62,5 +63,9 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
             WebSocketHandler wsHandler,
             Exception exception) {
         // no-op
+    }
+
+    public static String sessionKey(AccountType type, Long id) {
+        return type.name() + ":" + id;
     }
 }

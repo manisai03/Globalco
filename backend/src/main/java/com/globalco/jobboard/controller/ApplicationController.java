@@ -42,7 +42,7 @@ public class ApplicationController {
 
     @GetMapping("/{id}")
     public ApiResponse<ApplicationDetailResponse> getApplication(@PathVariable Long id) {
-        return ApiResponse.ok(applicationService.getApplicationDetail(id, securityUtils.getCurrentUser()));
+        return ApiResponse.ok(applicationService.getApplicationDetail(id, securityUtils.getCurrentAccount()));
     }
 
     @GetMapping("/jobs/{jobId}")
@@ -55,7 +55,7 @@ public class ApplicationController {
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<ApplicationResponse> updateStatus(
             @PathVariable Long id, @RequestBody Map<String, String> body) {
-        return ApiResponse.ok(applicationService.updateStatus(id, body.get("status"), securityUtils.getCurrentUser()));
+        return ApiResponse.ok(applicationService.updateStatus(id, body.get("status"), securityUtils.getCurrentAdmin()));
     }
 
     @DeleteMapping("/{id}")
@@ -67,7 +67,7 @@ public class ApplicationController {
     @PostMapping("/interviews")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<Void> scheduleInterview(@Valid @RequestBody InterviewRequest request) {
-        applicationService.scheduleInterview(request, securityUtils.getCurrentUser());
+        applicationService.scheduleInterview(request, securityUtils.getCurrentAdmin());
         return ApiResponse.ok("Interview scheduled", null);
     }
 }

@@ -9,11 +9,12 @@ import com.globalco.jobboard.dto.response.RegisterResponse;
 import com.globalco.jobboard.exception.BadRequestException;
 import com.globalco.jobboard.exception.ResourceNotFoundException;
 import com.globalco.jobboard.mapper.EntityMapper;
+import com.globalco.jobboard.model.Admin;
+import com.globalco.jobboard.model.AuthenticatedAccount;
 import com.globalco.jobboard.model.PasswordResetOtp;
-import com.globalco.jobboard.model.Role;
 import com.globalco.jobboard.model.User;
+import com.globalco.jobboard.repository.AdminRepository;
 import com.globalco.jobboard.repository.PasswordResetOtpRepository;
-import com.globalco.jobboard.repository.RoleRepository;
 import com.globalco.jobboard.repository.UserRepository;
 import com.globalco.jobboard.security.JwtService;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +32,8 @@ import java.time.LocalDateTime;
 public class AuthService {
 
     private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
+    private final AdminRepository adminRepository;
+    private final AccountService accountService;
     private final PasswordResetOtpRepository otpRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -40,7 +42,7 @@ public class AuthService {
 
     @Transactional
     public RegisterResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
+        if (accountService.existsByEmail(request.getEmail())) {
             throw new BadRequestException("Email already registered");
         }
 
@@ -52,33 +54,36 @@ public class AuthService {
             if (request.getRecruiterTitle() == null || request.getRecruiterTitle().isBlank()) {
                 throw new BadRequestException("Your role/title is required for recruiters");
             }
+
+            Admin admin = Admin.builder()
+                    .email(request.getEmail())
+                    .password(passwordEncoder.encode(request.getPassword()))
+                    .fullName(request.getFullName())
+                    .phone(request.getPhone())
+                    .location(request.getLocation())
+                    .companyName(request.getCompanyName())
+                    .companyWebsite(request.getCompanyWebsite())
+                    .companyDescription(request.getCompanyDescription())
+                    .recruiterTitle(request.getRecruiterTitle())
+                    .build();
+            adminRepository.save(admin);
+
+            return RegisterResponse.builder()
+                    .email(admin.getEmail())
+                    .fullName(admin.getFullName())
+                    .message("Account created successfully. Please sign in to continue.")
+                    .build();
         }
 
-        String roleName = isRecruiter ? "ROLE_ADMIN" : "ROLE_USER";
-        Role role = roleRepository.findByName(roleName)
-                .orElseThrow(() -> new BadRequestException("Role not found"));
-
-        User.UserBuilder userBuilder = User.builder()
+        User user = User.builder()
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .fullName(request.getFullName())
                 .phone(request.getPhone())
                 .location(request.getLocation())
-                .role(role);
-
-        if (isRecruiter) {
-            userBuilder
-                    .companyName(request.getCompanyName())
-                    .companyWebsite(request.getCompanyWebsite())
-                    .companyDescription(request.getCompanyDescription())
-                    .recruiterTitle(request.getRecruiterTitle());
-        } else {
-            userBuilder
-                    .currentTitle(request.getCurrentTitle())
-                    .skills(request.getSkills());
-        }
-
-        User user = userBuilder.build();
+                .currentTitle(request.getCurrentTitle())
+                .skills(request.getSkills())
+                .build();
         userRepository.save(user);
 
         return RegisterResponse.builder()
@@ -92,36 +97,36 @@ public class AuthService {
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword()));
 
-        User user = userRepository.findByEmail(request.getEmail())
+        AuthenticatedAccount account = accountService.findByEmail(request.getEmail())
                 .orElseThrow(() -> new BadRequestException("Invalid credentials"));
 
         String token = jwtService.generateToken(
                 org.springframework.security.core.userdetails.User.builder()
-                        .username(user.getEmail())
-                        .password(user.getPassword())
-                        .authorities(user.getRole().getName())
+                        .username(account.getEmail())
+                        .password(account.getPassword())
+                        .authorities(account.getRoleName())
                         .build());
 
         return AuthResponse.builder()
                 .token(token)
-                .user(EntityMapper.toUserResponse(user))
+                .user(EntityMapper.toUserResponse(account))
                 .build();
     }
 
     @Transactional
     public void sendPasswordResetOtp(ForgotPasswordRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
+        AuthenticatedAccount account = accountService.findByEmail(request.getEmail())
                 .orElseThrow(() -> new ResourceNotFoundException("No account found with this email"));
 
         String otp = String.format("%06d", new SecureRandom().nextInt(1_000_000));
         PasswordResetOtp resetOtp = PasswordResetOtp.builder()
-                .email(user.getEmail())
+                .email(account.getEmail())
                 .otp(otp)
                 .expiresAt(LocalDateTime.now().plusMinutes(10))
                 .used(false)
                 .build();
         otpRepository.save(resetOtp);
-        emailService.sendOtp(user.getEmail(), otp);
+        emailService.sendOtp(account.getEmail(), otp);
     }
 
     @Transactional
@@ -140,11 +145,17 @@ public class AuthService {
             throw new BadRequestException("Invalid OTP");
         }
 
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        AuthenticatedAccount account = accountService.findByEmail(request.getEmail())
+                .orElseThrow(() -> new ResourceNotFoundException("Account not found"));
 
-        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        userRepository.save(user);
+        if (account instanceof Admin admin) {
+            admin.setPassword(passwordEncoder.encode(request.getNewPassword()));
+            adminRepository.save(admin);
+        } else {
+            User user = (User) account;
+            user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+            userRepository.save(user);
+        }
 
         resetOtp.setUsed(true);
         otpRepository.save(resetOtp);

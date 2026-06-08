@@ -4,10 +4,9 @@ import com.globalco.jobboard.dto.response.ApplicationAnalyticsResponse;
 import com.globalco.jobboard.dto.response.ApplicationResponse;
 import com.globalco.jobboard.dto.response.DashboardResponse;
 import com.globalco.jobboard.mapper.EntityMapper;
-import com.globalco.jobboard.model.User;
+import com.globalco.jobboard.model.Admin;
 import com.globalco.jobboard.repository.ApplicationRepository;
 import com.globalco.jobboard.repository.JobRepository;
-import com.globalco.jobboard.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -24,9 +23,8 @@ public class AdminService {
 
     private final JobRepository jobRepository;
     private final ApplicationRepository applicationRepository;
-    private final UserRepository userRepository;
 
-    public DashboardResponse getDashboard(User admin) {
+    public DashboardResponse getDashboard(Admin admin) {
         Long adminId = admin.getId();
 
         List<ApplicationResponse> recent = applicationRepository
@@ -72,7 +70,7 @@ public class AdminService {
                 .build();
     }
 
-    public ApplicationAnalyticsResponse getApplicationAnalytics(String period, User admin) {
+    public ApplicationAnalyticsResponse getApplicationAnalytics(String period, Admin admin) {
         LocalDateTime since = resolvePeriodStart(period);
         String periodLabel = resolvePeriodLabel(period);
         Long adminId = admin.getId();

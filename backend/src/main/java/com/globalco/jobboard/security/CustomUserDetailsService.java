@@ -1,6 +1,6 @@
 package com.globalco.jobboard.security;
 
-import com.globalco.jobboard.repository.UserRepository;
+import com.globalco.jobboard.service.AccountService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
@@ -15,17 +15,17 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CustomUserDetailsService implements UserDetailsService {
 
-    private final UserRepository userRepository;
+    private final AccountService accountService;
 
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        var user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
+        var account = accountService.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("Account not found: " + email));
 
         return User.builder()
-                .username(user.getEmail())
-                .password(user.getPassword())
-                .authorities(List.of(new SimpleGrantedAuthority(user.getRole().getName())))
+                .username(account.getEmail())
+                .password(account.getPassword())
+                .authorities(List.of(new SimpleGrantedAuthority(account.getRoleName())))
                 .build();
     }
 }

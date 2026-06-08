@@ -26,22 +26,22 @@ public class AdminController {
 
     @GetMapping("/dashboard")
     public ApiResponse<DashboardResponse> dashboard() {
-        return ApiResponse.ok(adminService.getDashboard(securityUtils.getCurrentUser()));
+        return ApiResponse.ok(adminService.getDashboard(securityUtils.getCurrentAdmin()));
     }
 
     @GetMapping("/applicants")
     public ApiResponse<List<ApplicationResponse>> allApplicants() {
-        return ApiResponse.ok(applicationService.getAllApplicants(securityUtils.getCurrentUser()));
+        return ApiResponse.ok(applicationService.getAllApplicants(securityUtils.getCurrentAdmin()));
     }
 
     @GetMapping("/jobs")
     public ApiResponse<List<JobResponse>> myJobs() {
-        return ApiResponse.ok(jobService.getMyJobs(securityUtils.getCurrentUser()));
+        return ApiResponse.ok(jobService.getMyJobs(securityUtils.getCurrentAdmin()));
     }
 
     @GetMapping("/analytics/applications")
     public ApiResponse<ApplicationAnalyticsResponse> applicationAnalytics(
             @RequestParam(defaultValue = "month") String period) {
-        return ApiResponse.ok(adminService.getApplicationAnalytics(period, securityUtils.getCurrentUser()));
+        return ApiResponse.ok(adminService.getApplicationAnalytics(period, securityUtils.getCurrentAdmin()));
     }
 }

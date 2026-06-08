@@ -1,10 +1,10 @@
 package com.globalco.jobboard.config;
 
+import com.globalco.jobboard.model.Admin;
 import com.globalco.jobboard.model.Job;
-import com.globalco.jobboard.model.Role;
 import com.globalco.jobboard.model.User;
+import com.globalco.jobboard.repository.AdminRepository;
 import com.globalco.jobboard.repository.JobRepository;
-import com.globalco.jobboard.repository.RoleRepository;
 import com.globalco.jobboard.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,20 +19,15 @@ import java.math.BigDecimal;
 @RequiredArgsConstructor
 public class DataSeeder implements CommandLineRunner {
 
-    private final RoleRepository roleRepository;
+    private final AdminRepository adminRepository;
     private final UserRepository userRepository;
     private final JobRepository jobRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
     public void run(String... args) {
-        Role adminRole = roleRepository.findByName("ROLE_ADMIN")
-                .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_ADMIN").build()));
-        Role userRole = roleRepository.findByName("ROLE_USER")
-                .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_USER").build()));
-
-        User admin = userRepository.findByEmail("admin@globalco.com").orElseGet(() ->
-                userRepository.save(User.builder()
+        Admin admin = adminRepository.findByEmail("admin@globalco.com").orElseGet(() ->
+                adminRepository.save(Admin.builder()
                         .email("admin@globalco.com")
                         .password(passwordEncoder.encode("admin123"))
                         .fullName("Globalco Admin")
@@ -41,7 +36,6 @@ public class DataSeeder implements CommandLineRunner {
                         .companyWebsite("https://globalco.com")
                         .companyDescription("Leading recruitment and technology company based in Hitech City, Hyderabad.")
                         .recruiterTitle("Senior Talent Acquisition Manager")
-                        .role(adminRole)
                         .build()));
 
         userRepository.findByEmail("candidate@globalco.com").orElseGet(() ->
@@ -52,7 +46,6 @@ public class DataSeeder implements CommandLineRunner {
                         .location("Hyderabad")
                         .currentTitle("Software Engineer")
                         .skills("Java, Spring Boot, React, MySQL, REST APIs")
-                        .role(userRole)
                         .build()));
 
         if (jobRepository.count() == 0) {
@@ -63,7 +56,7 @@ public class DataSeeder implements CommandLineRunner {
         log.info("Demo accounts: admin@globalco.com / admin123 | candidate@globalco.com / user123");
     }
 
-    private void seedJobs(User admin) {
+    private void seedJobs(Admin admin) {
         jobRepository.save(Job.builder()
                 .title("Senior Software Engineer")
                 .company("Globalco Technologies")

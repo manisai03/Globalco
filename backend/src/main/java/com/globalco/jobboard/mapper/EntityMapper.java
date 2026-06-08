@@ -24,13 +24,32 @@ public final class EntityMapper {
                 .educationProfile(user.getEducationProfile())
                 .internshipsProfile(user.getInternshipsProfile())
                 .employmentProfile(user.getEmploymentProfile())
-                .companyName(user.getCompanyName())
-                .companyWebsite(user.getCompanyWebsite())
-                .companyDescription(user.getCompanyDescription())
-                .recruiterTitle(user.getRecruiterTitle())
-                .role(user.getRole().getName())
+                .role("ROLE_USER")
                 .createdAt(user.getCreatedAt())
                 .build();
+    }
+
+    public static UserResponse toUserResponse(Admin admin) {
+        return UserResponse.builder()
+                .id(admin.getId())
+                .email(admin.getEmail())
+                .fullName(admin.getFullName())
+                .phone(admin.getPhone())
+                .location(admin.getLocation())
+                .companyName(admin.getCompanyName())
+                .companyWebsite(admin.getCompanyWebsite())
+                .companyDescription(admin.getCompanyDescription())
+                .recruiterTitle(admin.getRecruiterTitle())
+                .role("ROLE_ADMIN")
+                .createdAt(admin.getCreatedAt())
+                .build();
+    }
+
+    public static UserResponse toUserResponse(AuthenticatedAccount account) {
+        if (account instanceof Admin admin) {
+            return toUserResponse(admin);
+        }
+        return toUserResponse((User) account);
     }
 
     public static JobResponse toJobResponse(Job job) {
@@ -117,13 +136,15 @@ public final class EntityMapper {
                 .build();
     }
 
-    public static MessageResponse toMessageResponse(Message message) {
+    public static MessageResponse toMessageResponse(Message message, String senderName, String receiverName) {
         return MessageResponse.builder()
                 .id(message.getId())
-                .senderId(message.getSender().getId())
-                .senderName(message.getSender().getFullName())
-                .receiverId(message.getReceiver().getId())
-                .receiverName(message.getReceiver().getFullName())
+                .senderId(message.getSenderId())
+                .senderAccountType(message.getSenderType())
+                .senderName(senderName)
+                .receiverId(message.getReceiverId())
+                .receiverAccountType(message.getReceiverType())
+                .receiverName(receiverName)
                 .content(message.getContent())
                 .read(message.getReadFlag())
                 .createdAt(message.getCreatedAt())

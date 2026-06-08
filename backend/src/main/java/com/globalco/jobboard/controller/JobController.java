@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/jobs")
@@ -33,20 +32,21 @@ public class JobController {
             @RequestParam(required = false) BigDecimal minSalary,
             @RequestParam(required = false) BigDecimal maxSalary,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String sort,
+            @RequestParam(required = false, defaultValue = "recent") String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "12") int size) {
-        return ApiResponse.ok(jobService.searchJobs(search, location, jobType, experienceLevel,
+        return ApiResponse.ok(jobService.searchJobs(
+                search, location, jobType, experienceLevel,
                 category, minSalary, maxSalary, status, sort, page, size, securityUtils.getCurrentUserOrNull()));
     }
 
     @GetMapping("/featured")
-    public ApiResponse<List<JobResponse>> getFeatured() {
+    public ApiResponse<List<JobResponse>> featuredJobs() {
         return ApiResponse.ok(jobService.getFeaturedJobs(securityUtils.getCurrentUserOrNull()));
     }
 
     @GetMapping("/categories")
-    public ApiResponse<List<String>> getCategories() {
+    public ApiResponse<List<String>> categories() {
         return ApiResponse.ok(jobService.getCategories());
     }
 
@@ -58,31 +58,31 @@ public class JobController {
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<JobResponse> createJob(@Valid @RequestBody JobRequest request) {
-        return ApiResponse.ok("Job created", jobService.createJob(request, securityUtils.getCurrentUser()));
+        return ApiResponse.ok("Job created", jobService.createJob(request, securityUtils.getCurrentAdmin()));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<JobResponse> updateJob(@PathVariable Long id, @Valid @RequestBody JobRequest request) {
-        return ApiResponse.ok("Job updated", jobService.updateJob(id, request, securityUtils.getCurrentUser()));
+        return ApiResponse.ok("Job updated", jobService.updateJob(id, request, securityUtils.getCurrentAdmin()));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<Void> deleteJob(@PathVariable Long id) {
-        jobService.deleteJob(id, securityUtils.getCurrentUser());
+        jobService.deleteJob(id, securityUtils.getCurrentAdmin());
         return ApiResponse.ok("Job deleted", null);
     }
 
     @PatchMapping("/{id}/close")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<JobResponse> closeJob(@PathVariable Long id) {
-        return ApiResponse.ok(jobService.closeJob(id, securityUtils.getCurrentUser()));
+        return ApiResponse.ok(jobService.closeJob(id, securityUtils.getCurrentAdmin()));
     }
 
     @PatchMapping("/{id}/reopen")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<JobResponse> reopenJob(@PathVariable Long id) {
-        return ApiResponse.ok(jobService.reopenJob(id, securityUtils.getCurrentUser()));
+        return ApiResponse.ok(jobService.reopenJob(id, securityUtils.getCurrentAdmin()));
     }
 }

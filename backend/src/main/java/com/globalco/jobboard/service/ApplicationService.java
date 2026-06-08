@@ -7,7 +7,9 @@ import com.globalco.jobboard.dto.response.ApplicationResponse;
 import com.globalco.jobboard.exception.BadRequestException;
 import com.globalco.jobboard.exception.ResourceNotFoundException;
 import com.globalco.jobboard.mapper.EntityMapper;
+import com.globalco.jobboard.model.Admin;
 import com.globalco.jobboard.model.Application;
+import com.globalco.jobboard.model.AuthenticatedAccount;
 import com.globalco.jobboard.model.Interview;
 import com.globalco.jobboard.model.Job;
 import com.globalco.jobboard.model.User;
@@ -36,10 +38,6 @@ public class ApplicationService {
 
     @Transactional
     public ApplicationResponse apply(Long jobId, ApplicationRequest request, MultipartFile resume, User user) {
-        if ("ROLE_ADMIN".equals(user.getRole().getName())) {
-            throw new BadRequestException("Recruiters cannot apply for jobs. Browse jobs to view market listings.");
-        }
-
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found"));
 
@@ -94,20 +92,20 @@ public class ApplicationService {
                 .toList();
     }
 
-    public List<ApplicationResponse> getAllApplicants(User admin) {
+    public List<ApplicationResponse> getAllApplicants(Admin admin) {
         return applicationRepository.findByJobCreatedByIdOrderByCreatedAtDesc(admin.getId()).stream()
                 .map(EntityMapper::toApplicationResponse)
                 .toList();
     }
 
-    public ApplicationDetailResponse getApplicationDetail(Long id, User requester) {
+    public ApplicationDetailResponse getApplicationDetail(Long id, AuthenticatedAccount requester) {
         Application app = applicationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found"));
 
-        boolean isOwner = app.getUser().getId().equals(requester.getId());
-        boolean isAdmin = "ROLE_ADMIN".equals(requester.getRole().getName());
-        boolean isJobOwner = isAdmin && app.getJob().getCreatedBy() != null
-                && app.getJob().getCreatedBy().getId().equals(requester.getId());
+        boolean isOwner = requester instanceof User user && app.getUser().getId().equals(user.getId());
+        boolean isJobOwner = requester instanceof Admin admin
+                && app.getJob().getCreatedBy() != null
+                && app.getJob().getCreatedBy().getId().equals(admin.getId());
         if (!isOwner && !isJobOwner) {
             throw new BadRequestException("Not authorized to view this application");
         }
@@ -118,7 +116,7 @@ public class ApplicationService {
     }
 
     @Transactional
-    public ApplicationResponse updateStatus(Long id, String status, User admin) {
+    public ApplicationResponse updateStatus(Long id, String status, Admin admin) {
         Application app = applicationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found"));
         assertJobOwner(app.getJob(), admin);
@@ -145,7 +143,7 @@ public class ApplicationService {
     }
 
     @Transactional
-    public void scheduleInterview(InterviewRequest request, User admin) {
+    public void scheduleInterview(InterviewRequest request, Admin admin) {
         Application app = applicationRepository.findById(request.getApplicationId())
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found"));
         assertJobOwner(app.getJob(), admin);
@@ -166,7 +164,7 @@ public class ApplicationService {
                 "INTERVIEW_SCHEDULED", interview.getId());
     }
 
-    private void assertJobOwner(Job job, User admin) {
+    private void assertJobOwner(Job job, Admin admin) {
         if (job.getCreatedBy() == null || !job.getCreatedBy().getId().equals(admin.getId())) {
             throw new BadRequestException("You can only manage applicants for your own job postings");
         }

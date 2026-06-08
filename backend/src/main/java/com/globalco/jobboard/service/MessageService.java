@@ -4,12 +4,13 @@ import com.globalco.jobboard.dto.request.MessageRequest;
 import com.globalco.jobboard.dto.response.ContactResponse;
 import com.globalco.jobboard.dto.response.MessageResponse;
 import com.globalco.jobboard.exception.BadRequestException;
-import com.globalco.jobboard.exception.ResourceNotFoundException;
 import com.globalco.jobboard.mapper.EntityMapper;
+import com.globalco.jobboard.model.AccountType;
+import com.globalco.jobboard.model.Admin;
+import com.globalco.jobboard.model.AuthenticatedAccount;
 import com.globalco.jobboard.model.Message;
 import com.globalco.jobboard.model.User;
 import com.globalco.jobboard.repository.MessageRepository;
-import com.globalco.jobboard.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,91 +25,125 @@ import java.util.Map;
 public class MessageService {
 
     private final MessageRepository messageRepository;
-    private final UserRepository userRepository;
+    private final AccountService accountService;
     private final NotificationService notificationService;
     private final ChatSocketService chatSocketService;
 
     @Transactional
-    public MessageResponse sendMessage(MessageRequest request, User sender) {
-        User receiver = userRepository.findById(request.getReceiverId())
-                .orElseThrow(() -> new ResourceNotFoundException("Receiver not found"));
+    public MessageResponse sendMessage(MessageRequest request, AuthenticatedAccount sender) {
+        AuthenticatedAccount receiver = accountService.resolvePartner(sender.getAccountType(), request.getReceiverId());
 
-        if (!"ROLE_ADMIN".equals(sender.getRole().getName())) {
-            List<Message> existing = messageRepository.findConversation(sender.getId(), receiver.getId());
+        if (sender.getAccountType() == AccountType.USER) {
+            List<Message> existing = messageRepository.findConversation(
+                    sender.getAccountType(), sender.getId(),
+                    receiver.getAccountType(), receiver.getId());
             if (existing.isEmpty()) {
                 throw new BadRequestException("Only recruiters can start a conversation");
             }
             boolean recruiterInitiated = existing.stream()
-                    .anyMatch(m -> "ROLE_ADMIN".equals(m.getSender().getRole().getName()));
+                    .anyMatch(m -> m.getSenderType() == AccountType.ADMIN);
             if (!recruiterInitiated) {
                 throw new BadRequestException("You can reply after a recruiter messages you");
             }
         }
 
         Message message = Message.builder()
-                .sender(sender)
-                .receiver(receiver)
+                .senderType(sender.getAccountType())
+                .senderId(sender.getId())
+                .receiverType(receiver.getAccountType())
+                .receiverId(receiver.getId())
                 .content(request.getContent())
                 .build();
 
         Message saved = messageRepository.save(message);
 
-        notificationService.create(receiver, "New Message",
-                sender.getFullName() + " sent you a message", "NEW_MESSAGE", saved.getId());
+        if (receiver instanceof User user) {
+            notificationService.create(user, "New Message",
+                    sender.getFullName() + " sent you a message", "NEW_MESSAGE", saved.getId());
+        } else if (receiver instanceof Admin admin) {
+            notificationService.create(admin, "New Message",
+                    sender.getFullName() + " sent you a message", "NEW_MESSAGE", saved.getId());
+        }
 
-        MessageResponse response = EntityMapper.toMessageResponse(saved);
+        MessageResponse response = EntityMapper.toMessageResponse(saved, sender.getFullName(), receiver.getFullName());
         chatSocketService.deliver(response);
         return response;
     }
 
-    public List<MessageResponse> getConversation(Long partnerId, User currentUser) {
-        List<Message> messages = messageRepository.findConversation(currentUser.getId(), partnerId);
+    public List<MessageResponse> getConversation(Long partnerId, AuthenticatedAccount currentAccount) {
+        AuthenticatedAccount partner = accountService.resolvePartner(currentAccount.getAccountType(), partnerId);
+        List<Message> messages = messageRepository.findConversation(
+                currentAccount.getAccountType(), currentAccount.getId(),
+                partner.getAccountType(), partner.getId());
+
         messages.forEach(m -> {
-            if (m.getReceiver().getId().equals(currentUser.getId()) && !m.getReadFlag()) {
+            boolean isReceiver = m.getReceiverType().equals(currentAccount.getAccountType())
+                    && m.getReceiverId().equals(currentAccount.getId());
+            if (isReceiver && !m.getReadFlag()) {
                 m.setReadFlag(true);
                 messageRepository.save(m);
             }
         });
-        return messages.stream().map(EntityMapper::toMessageResponse).toList();
+
+        return messages.stream()
+                .map(m -> EntityMapper.toMessageResponse(
+                        m,
+                        resolveName(m.getSenderType(), m.getSenderId()),
+                        resolveName(m.getReceiverType(), m.getReceiverId())))
+                .toList();
     }
 
-    public List<ContactResponse> getConversationPartners(User currentUser) {
-        return getAvailableContacts(currentUser);
+    public List<ContactResponse> getConversationPartners(AuthenticatedAccount currentAccount) {
+        return getAvailableContacts(currentAccount);
     }
 
-    public List<ContactResponse> getAvailableContacts(User currentUser) {
+    public List<ContactResponse> getAvailableContacts(AuthenticatedAccount currentAccount) {
         Map<Long, ContactResponse> contacts = new LinkedHashMap<>();
-        boolean isAdmin = "ROLE_ADMIN".equals(currentUser.getRole().getName());
+        AccountType partnerType = currentAccount.getAccountType() == AccountType.ADMIN
+                ? AccountType.USER : AccountType.ADMIN;
+        boolean isAdminViewer = currentAccount.getAccountType() == AccountType.ADMIN;
 
-        if (isAdmin) {
-            messageRepository.findConversationPartners(currentUser.getId()).forEach(id ->
-                    userRepository.findById(id).ifPresent(u -> contacts.put(u.getId(), toContact(u, currentUser, true))));
-        } else {
-            messageRepository.findConversationPartners(currentUser.getId()).forEach(id ->
-                    userRepository.findById(id).ifPresent(u -> {
-                        if ("ROLE_ADMIN".equals(u.getRole().getName())) {
-                            contacts.put(u.getId(), toContact(u, currentUser, false));
-                        }
-                    }));
-        }
+        messageRepository.findConversationPartnerIds(currentAccount.getAccountType(), currentAccount.getId())
+                .forEach(partnerId -> {
+                    AuthenticatedAccount partner = partnerType == AccountType.USER
+                            ? accountService.getUserById(partnerId)
+                            : accountService.getAdminById(partnerId);
+                    contacts.put(partnerId, toContact(partner, currentAccount, isAdminViewer));
+                });
 
         return new ArrayList<>(contacts.values());
     }
 
-    private ContactResponse toContact(User partner, User currentUser, boolean isAdminViewer) {
-        long unread = messageRepository.countUnreadFromPartner(currentUser.getId(), partner.getId());
-        boolean canReply = isAdminViewer || messageRepository.hasRecruiterMessagedUser(currentUser.getId(), partner.getId());
-        return ContactResponse.builder()
+    private ContactResponse toContact(AuthenticatedAccount partner, AuthenticatedAccount currentAccount, boolean isAdminViewer) {
+        long unread = messageRepository.countUnreadFromPartner(
+                currentAccount.getAccountType(), currentAccount.getId(),
+                partner.getAccountType(), partner.getId());
+        boolean canReply = isAdminViewer || messageRepository.hasPartnerMessagedAccount(
+                currentAccount.getAccountType(), currentAccount.getId(),
+                partner.getAccountType(), partner.getId());
+
+        ContactResponse.ContactResponseBuilder builder = ContactResponse.builder()
                 .id(partner.getId())
                 .fullName(partner.getFullName())
                 .email(partner.getEmail())
-                .companyName(partner.getCompanyName())
                 .unreadCount(unread)
-                .canReply(canReply)
-                .build();
+                .canReply(canReply);
+
+        if (partner instanceof Admin admin) {
+            builder.companyName(admin.getCompanyName());
+        }
+
+        return builder.build();
     }
 
-    public long getUnreadCount(User user) {
-        return messageRepository.countByReceiverIdAndReadFlagFalse(user.getId());
+    public long getUnreadCount(AuthenticatedAccount account) {
+        return messageRepository.countUnread(account.getAccountType(), account.getId());
+    }
+
+    private String resolveName(AccountType type, Long id) {
+        if (type == AccountType.ADMIN) {
+            return accountService.getAdminById(id).getFullName();
+        }
+        return accountService.getUserById(id).getFullName();
     }
 }

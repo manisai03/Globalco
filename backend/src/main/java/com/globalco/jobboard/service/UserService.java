@@ -6,7 +6,10 @@ import com.globalco.jobboard.dto.response.UserResponse;
 import com.globalco.jobboard.exception.BadRequestException;
 import com.globalco.jobboard.exception.ResourceNotFoundException;
 import com.globalco.jobboard.mapper.EntityMapper;
+import com.globalco.jobboard.model.Admin;
+import com.globalco.jobboard.model.AuthenticatedAccount;
 import com.globalco.jobboard.model.User;
+import com.globalco.jobboard.repository.AdminRepository;
 import com.globalco.jobboard.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -21,12 +24,13 @@ import java.time.LocalDateTime;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final AdminRepository adminRepository;
     private final PasswordEncoder passwordEncoder;
     private final FileStorageService fileStorageService;
     private final CloudinaryService cloudinaryService;
 
-    public UserResponse getProfile(User user) {
-        return EntityMapper.toUserResponse(user);
+    public UserResponse getProfile(AuthenticatedAccount account) {
+        return EntityMapper.toUserResponse(account);
     }
 
     public UserResponse getUserById(Long id) {
@@ -36,17 +40,25 @@ public class UserService {
     }
 
     @Transactional
-    public UserResponse updateProfile(User user, ProfileUpdateRequest request) {
+    public UserResponse updateProfile(AuthenticatedAccount account, ProfileUpdateRequest request) {
+        if (account instanceof Admin admin) {
+            if (request.getFullName() != null) admin.setFullName(request.getFullName());
+            if (request.getPhone() != null) admin.setPhone(request.getPhone());
+            if (request.getLocation() != null) admin.setLocation(request.getLocation());
+            if (request.getCompanyName() != null) admin.setCompanyName(request.getCompanyName());
+            if (request.getCompanyWebsite() != null) admin.setCompanyWebsite(request.getCompanyWebsite());
+            if (request.getCompanyDescription() != null) admin.setCompanyDescription(request.getCompanyDescription());
+            if (request.getRecruiterTitle() != null) admin.setRecruiterTitle(request.getRecruiterTitle());
+            return EntityMapper.toUserResponse(adminRepository.save(admin));
+        }
+
+        User user = (User) account;
         if (request.getFullName() != null) user.setFullName(request.getFullName());
         if (request.getPhone() != null) user.setPhone(request.getPhone());
         if (request.getLocation() != null) user.setLocation(request.getLocation());
         if (request.getBio() != null) user.setBio(request.getBio());
         if (request.getSkills() != null) user.setSkills(request.getSkills());
         if (request.getCurrentTitle() != null) user.setCurrentTitle(request.getCurrentTitle());
-        if (request.getCompanyName() != null) user.setCompanyName(request.getCompanyName());
-        if (request.getCompanyWebsite() != null) user.setCompanyWebsite(request.getCompanyWebsite());
-        if (request.getCompanyDescription() != null) user.setCompanyDescription(request.getCompanyDescription());
-        if (request.getRecruiterTitle() != null) user.setRecruiterTitle(request.getRecruiterTitle());
         if (request.getEducationProfile() != null) user.setEducationProfile(request.getEducationProfile());
         if (request.getInternshipsProfile() != null) user.setInternshipsProfile(request.getInternshipsProfile());
         if (request.getEmploymentProfile() != null) user.setEmploymentProfile(request.getEmploymentProfile());
@@ -72,11 +84,18 @@ public class UserService {
     }
 
     @Transactional
-    public void changePassword(User user, ChangePasswordRequest request) {
-        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+    public void changePassword(AuthenticatedAccount account, ChangePasswordRequest request) {
+        if (!passwordEncoder.matches(request.getCurrentPassword(), account.getPassword())) {
             throw new BadRequestException("Current password is incorrect");
         }
-        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        userRepository.save(user);
+        String encoded = passwordEncoder.encode(request.getNewPassword());
+        if (account instanceof Admin admin) {
+            admin.setPassword(encoded);
+            adminRepository.save(admin);
+        } else {
+            User user = (User) account;
+            user.setPassword(encoded);
+            userRepository.save(user);
+        }
     }
 }

@@ -6,6 +6,7 @@ import com.globalco.jobboard.dto.response.PageResponse;
 import com.globalco.jobboard.exception.BadRequestException;
 import com.globalco.jobboard.exception.ResourceNotFoundException;
 import com.globalco.jobboard.mapper.EntityMapper;
+import com.globalco.jobboard.model.Admin;
 import com.globalco.jobboard.model.Job;
 import com.globalco.jobboard.model.User;
 import com.globalco.jobboard.repository.ApplicationRepository;
@@ -68,7 +69,7 @@ public class JobService {
     }
 
     @Transactional
-    public JobResponse createJob(JobRequest request, User admin) {
+    public JobResponse createJob(JobRequest request, Admin admin) {
         Job job = Job.builder()
                 .title(request.getTitle())
                 .company(request.getCompany())
@@ -89,14 +90,14 @@ public class JobService {
         return EntityMapper.toJobResponse(saved);
     }
 
-    public List<JobResponse> getMyJobs(User admin) {
+    public List<JobResponse> getMyJobs(Admin admin) {
         return jobRepository.findByCreatedByIdOrderByCreatedAtDesc(admin.getId()).stream()
                 .map(EntityMapper::toJobResponse)
                 .toList();
     }
 
     @Transactional
-    public JobResponse updateJob(Long id, JobRequest request, User admin) {
+    public JobResponse updateJob(Long id, JobRequest request, Admin admin) {
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found"));
         assertJobOwner(job, admin);
@@ -117,7 +118,7 @@ public class JobService {
     }
 
     @Transactional
-    public void deleteJob(Long id, User admin) {
+    public void deleteJob(Long id, Admin admin) {
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found"));
         assertJobOwner(job, admin);
@@ -125,7 +126,7 @@ public class JobService {
     }
 
     @Transactional
-    public JobResponse closeJob(Long id, User admin) {
+    public JobResponse closeJob(Long id, Admin admin) {
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found"));
         assertJobOwner(job, admin);
@@ -134,7 +135,7 @@ public class JobService {
     }
 
     @Transactional
-    public JobResponse reopenJob(Long id, User admin) {
+    public JobResponse reopenJob(Long id, Admin admin) {
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found"));
         assertJobOwner(job, admin);
@@ -142,7 +143,7 @@ public class JobService {
         return EntityMapper.toJobResponse(jobRepository.save(job));
     }
 
-    private void assertJobOwner(Job job, User admin) {
+    private void assertJobOwner(Job job, Admin admin) {
         if (job.getCreatedBy() == null || !job.getCreatedBy().getId().equals(admin.getId())) {
             throw new BadRequestException("You can only manage your own job postings");
         }
@@ -163,9 +164,8 @@ public class JobService {
     private JobResponse mapWithUserContext(Job job, User currentUser) {
         boolean saved = false;
         boolean applied = false;
-        boolean isCandidate = currentUser != null && "ROLE_USER".equals(currentUser.getRole().getName());
 
-        if (isCandidate) {
+        if (currentUser != null) {
             saved = savedJobRepository.existsByUserIdAndJobId(currentUser.getId(), job.getId());
             applied = applicationRepository.existsByJobIdAndUserId(job.getId(), currentUser.getId());
         }
@@ -174,7 +174,7 @@ public class JobService {
         JobResponse response = EntityMapper.toJobResponse(job, saved, applied);
         response.setApplicantCount(applicantCount);
 
-        if (isCandidate) {
+        if (currentUser != null) {
             response.setMatchPreview(aiService.calculateMatchBreakdown(job, currentUser, applicantCount));
         }
 

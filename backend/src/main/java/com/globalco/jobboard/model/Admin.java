@@ -8,13 +8,13 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "users")
+@Table(name = "admins")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class User implements AuthenticatedAccount {
+public class Admin implements AuthenticatedAccount {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -31,23 +31,12 @@ public class User implements AuthenticatedAccount {
 
     private String phone;
     private String location;
-    @Column(columnDefinition = "TEXT")
-    private String bio;
-    @Column(columnDefinition = "TEXT")
-    private String skills;
-    private String resumeUrl;
-    private LocalDateTime resumeUploadedAt;
-    private String profilePictureUrl;
-    private String profilePicturePublicId;
-    private LocalDateTime profilePictureUploadedAt;
 
-    private String currentTitle;
+    private String companyName;
+    private String companyWebsite;
     @Column(columnDefinition = "TEXT")
-    private String educationProfile;
-    @Column(columnDefinition = "TEXT")
-    private String internshipsProfile;
-    @Column(columnDefinition = "TEXT")
-    private String employmentProfile;
+    private String companyDescription;
+    private String recruiterTitle;
 
     @CreationTimestamp
     @Column(updatable = false)
@@ -58,6 +47,6 @@ public class User implements AuthenticatedAccount {
 
     @Override
     public AccountType getAccountType() {
-        return AccountType.USER;
+        return AccountType.ADMIN;
     }
 }

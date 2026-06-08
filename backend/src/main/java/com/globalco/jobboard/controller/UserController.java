@@ -4,6 +4,7 @@ import com.globalco.jobboard.dto.request.ChangePasswordRequest;
 import com.globalco.jobboard.dto.request.ProfileUpdateRequest;
 import com.globalco.jobboard.dto.response.ApiResponse;
 import com.globalco.jobboard.dto.response.UserResponse;
+import com.globalco.jobboard.model.User;
 import com.globalco.jobboard.security.SecurityUtils;
 import com.globalco.jobboard.service.UserService;
 import jakarta.validation.Valid;
@@ -21,12 +22,12 @@ public class UserController {
 
     @GetMapping("/me")
     public ApiResponse<UserResponse> getProfile() {
-        return ApiResponse.ok(userService.getProfile(securityUtils.getCurrentUser()));
+        return ApiResponse.ok(userService.getProfile(securityUtils.getCurrentAccount()));
     }
 
     @PutMapping("/me")
     public ApiResponse<UserResponse> updateProfile(@Valid @RequestBody ProfileUpdateRequest request) {
-        return ApiResponse.ok(userService.updateProfile(securityUtils.getCurrentUser(), request));
+        return ApiResponse.ok(userService.updateProfile(securityUtils.getCurrentAccount(), request));
     }
 
     @PostMapping("/me/resume")
@@ -41,7 +42,7 @@ public class UserController {
 
     @PutMapping("/me/password")
     public ApiResponse<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
-        userService.changePassword(securityUtils.getCurrentUser(), request);
+        userService.changePassword(securityUtils.getCurrentAccount(), request);
         return ApiResponse.ok("Password updated", null);
     }
 

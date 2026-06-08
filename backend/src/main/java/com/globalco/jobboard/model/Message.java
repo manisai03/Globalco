@@ -19,13 +19,19 @@ public class Message {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "sender_id", nullable = false)
-    private User sender;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sender_type", nullable = false)
+    private AccountType senderType;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "receiver_id", nullable = false)
-    private User receiver;
+    @Column(name = "sender_id", nullable = false)
+    private Long senderId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "receiver_type", nullable = false)
+    private AccountType receiverType;
+
+    @Column(name = "receiver_id", nullable = false)
+    private Long receiverId;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;

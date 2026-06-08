@@ -1,5 +1,6 @@
 package com.globalco.jobboard.websocket;
 
+import com.globalco.jobboard.model.AccountType;
 import com.globalco.jobboard.service.ChatSocketService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -15,9 +16,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        Long userId = (Long) session.getAttributes().get(JwtHandshakeInterceptor.USER_ID_ATTR);
-        if (userId != null) {
-            chatSocketService.register(userId, session);
+        AccountType accountType = (AccountType) session.getAttributes().get(JwtHandshakeInterceptor.ACCOUNT_TYPE_ATTR);
+        Long accountId = (Long) session.getAttributes().get(JwtHandshakeInterceptor.ACCOUNT_ID_ATTR);
+        if (accountType != null && accountId != null) {
+            chatSocketService.register(accountType, accountId, session);
         } else {
             try {
                 session.close(CloseStatus.NOT_ACCEPTABLE);

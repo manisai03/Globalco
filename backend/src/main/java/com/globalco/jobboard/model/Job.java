@@ -53,8 +53,8 @@ public class Job {
     private Boolean featured = false;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "created_by", nullable = false)
-    private User createdBy;
+    @JoinColumn(name = "admin_id", nullable = false)
+    private Admin createdBy;
 
     @CreationTimestamp
     @Column(updatable = false)

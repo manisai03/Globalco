@@ -2,6 +2,7 @@ package com.globalco.jobboard.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.globalco.jobboard.dto.response.MessageResponse;
+import com.globalco.jobboard.model.AccountType;
 import com.globalco.jobboard.websocket.JwtHandshakeInterceptor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,36 +21,40 @@ import java.util.concurrent.CopyOnWriteArraySet;
 public class ChatSocketService {
 
     private final ObjectMapper objectMapper;
-    private final Map<Long, Set<WebSocketSession>> sessionsByUser = new ConcurrentHashMap<>();
+    private final Map<String, Set<WebSocketSession>> sessionsByAccount = new ConcurrentHashMap<>();
 
-    public void register(Long userId, WebSocketSession session) {
-        sessionsByUser.computeIfAbsent(userId, id -> new CopyOnWriteArraySet<>()).add(session);
+    public void register(AccountType accountType, Long accountId, WebSocketSession session) {
+        String key = JwtHandshakeInterceptor.sessionKey(accountType, accountId);
+        sessionsByAccount.computeIfAbsent(key, id -> new CopyOnWriteArraySet<>()).add(session);
     }
 
     public void unregister(WebSocketSession session) {
-        Long userId = (Long) session.getAttributes().get(JwtHandshakeInterceptor.USER_ID_ATTR);
-        if (userId == null) {
+        AccountType accountType = (AccountType) session.getAttributes().get(JwtHandshakeInterceptor.ACCOUNT_TYPE_ATTR);
+        Long accountId = (Long) session.getAttributes().get(JwtHandshakeInterceptor.ACCOUNT_ID_ATTR);
+        if (accountType == null || accountId == null) {
             return;
         }
-        Set<WebSocketSession> sessions = sessionsByUser.get(userId);
+        String key = JwtHandshakeInterceptor.sessionKey(accountType, accountId);
+        Set<WebSocketSession> sessions = sessionsByAccount.get(key);
         if (sessions != null) {
             sessions.remove(session);
             if (sessions.isEmpty()) {
-                sessionsByUser.remove(userId);
+                sessionsByAccount.remove(key);
             }
         }
     }
 
     public void deliver(MessageResponse message) {
-        sendToUser(message.getSenderId(), message);
-        sendToUser(message.getReceiverId(), message);
+        sendToAccount(message.getSenderAccountType(), message.getSenderId(), message);
+        sendToAccount(message.getReceiverAccountType(), message.getReceiverId(), message);
     }
 
-    private void sendToUser(Long userId, MessageResponse message) {
-        if (userId == null) {
+    private void sendToAccount(AccountType accountType, Long accountId, MessageResponse message) {
+        if (accountType == null || accountId == null) {
             return;
         }
-        Set<WebSocketSession> sessions = sessionsByUser.get(userId);
+        String key = JwtHandshakeInterceptor.sessionKey(accountType, accountId);
+        Set<WebSocketSession> sessions = sessionsByAccount.get(key);
         if (sessions == null || sessions.isEmpty()) {
             return;
         }
@@ -65,7 +70,7 @@ public class ChatSocketService {
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to push chat message to user {}: {}", userId, e.getMessage());
+            log.warn("Failed to push chat message to {}:{}: {}", accountType, accountId, e.getMessage());
         }
     }
 }

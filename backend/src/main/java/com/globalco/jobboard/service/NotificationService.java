@@ -3,6 +3,9 @@ package com.globalco.jobboard.service;
 import com.globalco.jobboard.dto.response.NotificationResponse;
 import com.globalco.jobboard.exception.ResourceNotFoundException;
 import com.globalco.jobboard.mapper.EntityMapper;
+import com.globalco.jobboard.model.AccountType;
+import com.globalco.jobboard.model.Admin;
+import com.globalco.jobboard.model.AuthenticatedAccount;
 import com.globalco.jobboard.model.Notification;
 import com.globalco.jobboard.model.User;
 import com.globalco.jobboard.repository.NotificationRepository;
@@ -19,8 +22,17 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
 
     public void create(User user, String title, String message, String type, Long referenceId) {
+        create(AccountType.USER, user.getId(), title, message, type, referenceId);
+    }
+
+    public void create(Admin admin, String title, String message, String type, Long referenceId) {
+        create(AccountType.ADMIN, admin.getId(), title, message, type, referenceId);
+    }
+
+    public void create(AccountType accountType, Long accountId, String title, String message, String type, Long referenceId) {
         Notification notification = Notification.builder()
-                .user(user)
+                .accountType(accountType)
+                .accountId(accountId)
                 .title(title)
                 .message(message)
                 .type(type)
@@ -29,21 +41,25 @@ public class NotificationService {
         notificationRepository.save(notification);
     }
 
-    public List<NotificationResponse> getUserNotifications(User user) {
-        return notificationRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).stream()
+    public List<NotificationResponse> getNotifications(AuthenticatedAccount account) {
+        return notificationRepository
+                .findByAccountTypeAndAccountIdOrderByCreatedAtDesc(account.getAccountType(), account.getId())
+                .stream()
                 .map(EntityMapper::toNotificationResponse)
                 .toList();
     }
 
-    public long getUnreadCount(User user) {
-        return notificationRepository.countByUserIdAndReadFlagFalse(user.getId());
+    public long getUnreadCount(AuthenticatedAccount account) {
+        return notificationRepository.countByAccountTypeAndAccountIdAndReadFlagFalse(
+                account.getAccountType(), account.getId());
     }
 
     @Transactional
-    public void markAsRead(Long id, User user) {
+    public void markAsRead(Long id, AuthenticatedAccount account) {
         Notification notification = notificationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Notification not found"));
-        if (!notification.getUser().getId().equals(user.getId())) {
+        if (!notification.getAccountType().equals(account.getAccountType())
+                || !notification.getAccountId().equals(account.getId())) {
             throw new ResourceNotFoundException("Notification not found");
         }
         notification.setReadFlag(true);
@@ -51,18 +67,21 @@ public class NotificationService {
     }
 
     @Transactional
-    public void markAllAsRead(User user) {
-        notificationRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).forEach(n -> {
-            n.setReadFlag(true);
-            notificationRepository.save(n);
-        });
+    public void markAllAsRead(AuthenticatedAccount account) {
+        notificationRepository
+                .findByAccountTypeAndAccountIdOrderByCreatedAtDesc(account.getAccountType(), account.getId())
+                .forEach(n -> {
+                    n.setReadFlag(true);
+                    notificationRepository.save(n);
+                });
     }
 
     @Transactional
-    public void deleteNotification(Long id, User user) {
+    public void deleteNotification(Long id, AuthenticatedAccount account) {
         Notification notification = notificationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Notification not found"));
-        if (!notification.getUser().getId().equals(user.getId())) {
+        if (!notification.getAccountType().equals(account.getAccountType())
+                || !notification.getAccountId().equals(account.getId())) {
             throw new ResourceNotFoundException("Notification not found");
         }
         notificationRepository.delete(notification);
