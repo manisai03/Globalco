@@ -14,6 +14,7 @@ import org.springframework.util.StringUtils;
 public class EmailService {
 
     private final JavaMailSender mailSender;
+    private final BrevoApiEmailSender brevoApiEmailSender;
 
     @Value("${app.mail.from:noreply@globalco.com}")
     private String fromEmail;
@@ -21,16 +22,14 @@ public class EmailService {
     @Value("${spring.mail.username:}")
     private String mailUsername;
 
-    public EmailService(@Autowired(required = false) JavaMailSender mailSender) {
+    public EmailService(
+            @Autowired(required = false) JavaMailSender mailSender,
+            BrevoApiEmailSender brevoApiEmailSender) {
         this.mailSender = mailSender;
+        this.brevoApiEmailSender = brevoApiEmailSender;
     }
 
     public void sendOtp(String toEmail, String otp) {
-        if (mailSender == null || !StringUtils.hasText(mailUsername)) {
-            throw new BadRequestException(
-                    "Email service is not configured. In the backend folder run .\\setup-mail.ps1 (or create mail-local.yml from mail-local.yml.example), then restart the backend.");
-        }
-
         String subject = "Globalco Jobs - Password Reset OTP";
         String body = """
                 Your password reset OTP is: %s
@@ -41,6 +40,17 @@ public class EmailService {
                 — Globalco Jobs Team
                 """.formatted(otp);
 
+        if (brevoApiEmailSender.isConfigured()) {
+            brevoApiEmailSender.send(fromEmail, toEmail, subject, body);
+            return;
+        }
+
+        if (mailSender == null || !StringUtils.hasText(mailUsername)) {
+            throw new BadRequestException(
+                    "Email service is not configured. For local dev, create backend/mail-local.yml. "
+                            + "For Render, set BREVO_API_KEY (Brevo API — SMTP is blocked on free tier).");
+        }
+
         try {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(fromEmail);
@@ -48,10 +58,11 @@ public class EmailService {
             message.setSubject(subject);
             message.setText(body);
             mailSender.send(message);
-            log.info("OTP email sent to {}", toEmail);
+            log.info("OTP email sent via SMTP to {}", toEmail);
         } catch (Exception e) {
             log.error("Failed to send OTP email to {}: {}", toEmail, e.getMessage());
-            throw new BadRequestException("Failed to send OTP email. Please verify MAIL_HOST, MAIL_USERNAME, and MAIL_PASSWORD settings.");
+            throw new BadRequestException(
+                    "Failed to send OTP email. On Render free tier use BREVO_API_KEY instead of SMTP.");
         }
     }
 }

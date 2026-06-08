@@ -256,7 +256,7 @@ export default function ForgotPassword() {
 
 
       <p className="mt-4 rounded-xl bg-slate-100 p-3 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-        OTP is sent to your email. Backend email is configured via <code className="rounded bg-slate-200 px-1 dark:bg-slate-700">backend/mail-local.yml</code> (Brevo or Gmail SMTP).
+        Check your inbox and spam folder for the 6-digit OTP. The code expires in 10 minutes.
       </p>
 
     </div>
