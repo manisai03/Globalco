@@ -44,7 +44,7 @@ public class BrevoApiEmailSender {
         }
 
         Map<String, Object> payload = Map.of(
-                "sender", Map.of("email", fromEmail, "name", "Globalco Jobs"),
+                "sender", Map.of("email", fromEmail, "name", "Job Board"),
                 "to", List.of(Map.of("email", toEmail)),
                 "subject", subject,
                 "textContent", body

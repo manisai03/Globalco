@@ -16,6 +16,7 @@ import com.globalco.jobboard.model.User;
 import com.globalco.jobboard.repository.AdminRepository;
 import com.globalco.jobboard.repository.PasswordResetOtpRepository;
 import com.globalco.jobboard.repository.UserRepository;
+import com.globalco.jobboard.util.RecruiterCompanyUtils;
 import com.globalco.jobboard.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -50,6 +51,9 @@ public class AuthService {
         if (isRecruiter) {
             if (request.getCompanyName() == null || request.getCompanyName().isBlank()) {
                 throw new BadRequestException("Company name is required for recruiters");
+            }
+            if (RecruiterCompanyUtils.isLegacyPlaceholder(request.getCompanyName())) {
+                throw new BadRequestException("Enter your real company name (e.g. XPO)");
             }
             if (request.getRecruiterTitle() == null || request.getRecruiterTitle().isBlank()) {
                 throw new BadRequestException("Your role/title is required for recruiters");

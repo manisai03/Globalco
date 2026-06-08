@@ -6,6 +6,7 @@ import com.globalco.jobboard.exception.BadRequestException;
 import com.globalco.jobboard.model.Admin;
 import com.globalco.jobboard.security.SecurityUtils;
 import com.globalco.jobboard.service.AiService;
+import com.globalco.jobboard.util.RecruiterCompanyUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -28,14 +29,11 @@ public class AiController {
     }
 
     private void enrichFromRecruiterProfile(AiJobDescriptionRequest request, Admin admin) {
-        if (request.getCompany() == null || request.getCompany().isBlank()) {
-            if (admin.getCompanyName() == null || admin.getCompanyName().isBlank()) {
-                throw new BadRequestException("Set your company name in Profile before generating job descriptions");
-            }
-            request.setCompany(admin.getCompanyName().trim());
-        } else {
-            request.setCompany(request.getCompany().trim());
+        String company = RecruiterCompanyUtils.resolveCompany(admin, request.getCompany());
+        if (company == null) {
+            throw new BadRequestException("Set your company name in Profile before generating job descriptions");
         }
+        request.setCompany(company);
         if (request.getLocation() == null || request.getLocation().isBlank()) {
             request.setLocation(admin.getLocation() != null && !admin.getLocation().isBlank()
                     ? admin.getLocation().trim() : "Hyderabad, India");

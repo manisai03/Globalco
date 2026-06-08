@@ -1,5 +1,6 @@
 import { Briefcase } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { APP_NAME } from '../utils/appBranding';
 
 export default function Footer() {
   return (
@@ -9,7 +10,7 @@ export default function Footer() {
           <div className="md:col-span-2">
             <div className="flex items-center gap-2 text-lg font-bold text-primary-700 dark:text-primary-400">
               <Briefcase className="h-6 w-6" />
-              Globalco Jobs
+              {APP_NAME}
             </div>
             <p className="mt-3 max-w-md text-sm text-slate-500 dark:text-slate-400">
               AI-powered recruitment platform connecting talented professionals with top companies in Hyderabad and beyond.
@@ -26,12 +27,12 @@ export default function Footer() {
             <h4 className="font-semibold">Contact</h4>
             <ul className="mt-3 space-y-2 text-sm text-slate-500 dark:text-slate-400">
               <li>Hitech City, Hyderabad</li>
-              <li>careers@globalco.com</li>
+              <li>support@jobboard.app</li>
             </ul>
           </div>
         </div>
         <p className="mt-8 border-t border-slate-200 pt-8 text-center text-sm text-slate-400 dark:border-slate-800">
-          © {new Date().getFullYear()} Globalco Technologies. All rights reserved.
+          © {new Date().getFullYear()} {APP_NAME}. All rights reserved.
         </p>
       </div>
     </footer>

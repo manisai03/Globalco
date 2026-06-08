@@ -129,7 +129,7 @@ export default function Register() {
 
       <h1 className="text-3xl font-bold">Create account</h1>
 
-      <p className="mt-2 text-slate-500">Join Globalco Jobs as a candidate or recruiter</p>
+      <p className="mt-2 text-slate-500">Create a candidate or recruiter account</p>
 
 
 
@@ -197,7 +197,7 @@ export default function Register() {
 
             <h2 className="pt-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Company Information</h2>
 
-            {field('companyName', 'Company Name', { required: true, placeholder: 'Globalco Technologies' })}
+            {field('companyName', 'Company Name', { required: true, placeholder: 'e.g. XPO, Xceed Technologies' })}
 
             {field('recruiterTitle', 'Your Role / Title', { required: true, placeholder: 'HR Manager, Talent Lead' })}
 

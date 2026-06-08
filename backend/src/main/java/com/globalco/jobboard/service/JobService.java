@@ -12,6 +12,7 @@ import com.globalco.jobboard.model.User;
 import com.globalco.jobboard.repository.ApplicationRepository;
 import com.globalco.jobboard.repository.JobRepository;
 import com.globalco.jobboard.repository.SavedJobRepository;
+import com.globalco.jobboard.util.RecruiterCompanyUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -190,13 +191,11 @@ public class JobService {
     }
 
     private String resolveCompany(JobRequest request, Admin admin) {
-        if (request.getCompany() != null && !request.getCompany().isBlank()) {
-            return request.getCompany().trim();
+        String company = RecruiterCompanyUtils.resolveCompany(admin, request.getCompany());
+        if (company == null) {
+            throw new BadRequestException("Company name is required. Add it in your Profile or the job form.");
         }
-        if (admin.getCompanyName() != null && !admin.getCompanyName().isBlank()) {
-            return admin.getCompanyName().trim();
-        }
-        throw new BadRequestException("Company name is required. Add it in your Profile or the job form.");
+        return company;
     }
 
     private void assertJobOwner(Job job, Admin admin) {

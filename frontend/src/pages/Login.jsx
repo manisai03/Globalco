@@ -78,7 +78,7 @@ export default function Login() {
 
       <h1 className="text-3xl font-bold">Sign in</h1>
 
-      <p className="mt-2 text-slate-500">Access your Globalco Jobs account</p>
+      <p className="mt-2 text-slate-500">Sign in to your account</p>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-4">
 

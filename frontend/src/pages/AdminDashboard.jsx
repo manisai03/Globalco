@@ -15,13 +15,14 @@ import {
   MapPin, Building2, IndianRupee, LayoutDashboard, Users,
 } from 'lucide-react';
 import { daysAgo, formatSalary } from '../utils/formatters';
+import { isLegacyCompanyName, resolveRecruiterCompany } from '../utils/recruiterCompany';
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4'];
 
 function buildJobDefaults(user) {
   return {
     title: '',
-    company: user?.companyName?.trim() || '',
+    company: resolveRecruiterCompany(user, ''),
     description: '',
     location: user?.location?.trim() || '',
     salaryMin: '',
@@ -38,7 +39,7 @@ function buildAiDefaults(user) {
   return {
     jobTitle: '',
     skills: '',
-    company: user?.companyName?.trim() || '',
+    company: resolveRecruiterCompany(user, ''),
     location: user?.location?.trim() || '',
     experienceLevel: 'Mid-Level',
   };
@@ -65,8 +66,15 @@ const DASHBOARD_TABS = [
 
 const NAV_ONLY_TABS = ['messages', 'profile'];
 
+function scrubGlobalcoFromDescription(description, company) {
+  if (!description || !company) return description;
+  return description
+    .replace(/Globalco Technologies/gi, company)
+    .replace(/\bGlobalco\b/gi, company);
+}
+
 export default function AdminDashboard() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [dashboard, setDashboard] = useState(null);
   const [applicants, setApplicants] = useState([]);
@@ -93,21 +101,17 @@ export default function AdminDashboard() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    refreshUser?.().finally(() => load());
+  }, []);
 
   useEffect(() => {
     if (!user || editingId) return;
-    setJobForm((prev) => ({
-      ...prev,
-      company: prev.company || user.companyName?.trim() || '',
-      location: prev.location || user.location?.trim() || '',
-    }));
-    setAiForm((prev) => ({
-      ...prev,
-      company: prev.company || user.companyName?.trim() || '',
-      location: prev.location || user.location?.trim() || '',
-    }));
-  }, [user, editingId]);
+    const company = resolveRecruiterCompany(user, jobForm.company);
+    const location = user.location?.trim() || jobForm.location || '';
+    setJobForm((prev) => ({ ...prev, company, location }));
+    setAiForm((prev) => ({ ...prev, company, location: location || prev.location }));
+  }, [user?.companyName, user?.location, editingId]);
 
   const switchTab = (key, extra = {}) => {
     setTab(key);
@@ -127,8 +131,14 @@ export default function AdminDashboard() {
 
   const saveJob = async (e) => {
     e.preventDefault();
+    const company = resolveRecruiterCompany(user, jobForm.company);
+    if (!company) {
+      return toast.error('Set your company name to XPO (or your company) in Profile or the Company field');
+    }
     const payload = {
       ...jobForm,
+      company,
+      description: scrubGlobalcoFromDescription(jobForm.description, company),
       salaryMin: jobForm.salaryMin ? Number(jobForm.salaryMin) : null,
       salaryMax: jobForm.salaryMax ? Number(jobForm.salaryMax) : null,
     };
@@ -149,8 +159,12 @@ export default function AdminDashboard() {
 
   const editJob = (job) => {
     setEditingId(job.id);
+    const company = resolveRecruiterCompany(user, job.company) || job.company;
     setJobForm({
-      title: job.title, company: job.company, description: job.description, location: job.location,
+      title: job.title,
+      company,
+      description: scrubGlobalcoFromDescription(job.description, company),
+      location: job.location,
       salaryMin: job.salaryMin || '', salaryMax: job.salaryMax || '', experienceLevel: job.experienceLevel || '',
       jobType: job.jobType, category: job.category || '', skills: job.skills || '', featured: job.featured,
     });
@@ -176,20 +190,23 @@ export default function AdminDashboard() {
     if (!aiForm.jobTitle?.trim() || !aiForm.skills?.trim()) {
       return toast.error('Job title and skills are required');
     }
-    if (!aiForm.company?.trim()) {
-      return toast.error('Company name is required — set it in Profile or the field below');
+    const company = resolveRecruiterCompany(user, aiForm.company);
+    if (!company) {
+      return toast.error('Set Company Name to XPO in Profile (Admin → Profile), then try again');
     }
     try {
-      const res = await api.post('/api/ai/generate-job-description', aiForm);
+      const res = await api.post('/api/ai/generate-job-description', { ...aiForm, company });
+      const description = unwrap(res).description;
       setJobForm((f) => ({
         ...f,
         title: aiForm.jobTitle,
         skills: aiForm.skills,
-        company: aiForm.company,
+        company,
         location: aiForm.location || f.location,
         experienceLevel: aiForm.experienceLevel || f.experienceLevel,
-        description: unwrap(res).description,
+        description: scrubGlobalcoFromDescription(description, company),
       }));
+      setAiForm((f) => ({ ...f, company }));
       switchTab('jobs');
       toast.success('AI description generated with your company name!');
     } catch (err) {
@@ -197,14 +214,18 @@ export default function AdminDashboard() {
     }
   };
 
-  const syncCompanyFromProfile = () => {
-    if (!user?.companyName?.trim()) {
-      return toast.error('Add your company name in Profile first');
+  const syncCompanyFromProfile = async () => {
+    const fresh = await refreshUser();
+    const company = resolveRecruiterCompany(fresh, '');
+    if (!company) {
+      return toast.error('Update Company Name in your Profile (e.g. XPO)');
     }
-    setJobForm((f) => ({ ...f, company: user.companyName.trim(), location: user.location?.trim() || f.location }));
-    setAiForm((f) => ({ ...f, company: user.companyName.trim(), location: user.location?.trim() || f.location }));
-    toast.success('Company synced from profile');
+    setJobForm((f) => ({ ...f, company, location: fresh.location?.trim() || f.location }));
+    setAiForm((f) => ({ ...f, company, location: fresh.location?.trim() || f.location }));
+    toast.success(`Company set to ${company}`);
   };
+
+  const profileCompanyMissing = user && isLegacyCompanyName(user.companyName);
 
   const filteredApplicants = applicants.filter((app) => {
     const matchesJob = !jobFilter || String(app.jobId) === jobFilter;
@@ -574,6 +595,14 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {profileCompanyMissing && tab !== 'profile' && (
+        <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+          Your profile still has a placeholder company name. Go to{' '}
+          <Link to="/admin?tab=profile" className="font-semibold underline">Profile</Link>
+          {' '}and set <strong>Company Name</strong> to <strong>XPO</strong> (or your real company) before posting jobs.
+        </div>
+      )}
+
       {tab === 'ai' && (
         <div className="mt-8 max-w-xl rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-2">
@@ -581,7 +610,7 @@ export default function AdminDashboard() {
             <h2 className="font-semibold">AI Job Description Generator</h2>
           </div>
           <p className="mt-2 text-sm text-slate-500">
-            Descriptions use your recruiting company (not Globalco). Pre-filled from your profile.
+            Descriptions use your recruiting company from your profile.
           </p>
           <div className="mt-4 space-y-3">
             <div>

@@ -11,6 +11,7 @@ import com.globalco.jobboard.repository.AdminRepository;
 import com.globalco.jobboard.repository.JobRepository;
 import com.globalco.jobboard.repository.SavedJobRepository;
 import com.globalco.jobboard.repository.ApplicationRepository;
+import com.globalco.jobboard.util.RecruiterCompanyUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,9 +40,14 @@ public class CompanyService {
                 .map(job -> mapJob(job, currentUser))
                 .toList();
 
-        String companyName = admin.getCompanyName() != null && !admin.getCompanyName().isBlank()
-                ? admin.getCompanyName()
-                : openJobs.stream().map(Job::getCompany).findFirst().orElse("Company");
+        String companyName = RecruiterCompanyUtils.resolveCompany(admin, null);
+        if (companyName == null) {
+            companyName = openJobs.stream()
+                    .map(Job::getCompany)
+                    .filter(c -> c != null && !RecruiterCompanyUtils.isLegacyPlaceholder(c))
+                    .findFirst()
+                    .orElse("Company");
+        }
 
         return CompanyResponse.builder()
                 .id(admin.getId())

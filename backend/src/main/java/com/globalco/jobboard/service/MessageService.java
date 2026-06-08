@@ -13,6 +13,7 @@ import com.globalco.jobboard.model.Message;
 import com.globalco.jobboard.model.User;
 import com.globalco.jobboard.repository.ApplicationRepository;
 import com.globalco.jobboard.repository.MessageRepository;
+import com.globalco.jobboard.util.RecruiterCompanyUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -153,7 +154,10 @@ public class MessageService {
                 .identityRevealed(identityRevealed);
 
         if (partner instanceof Admin admin) {
-            builder.companyName(admin.getCompanyName());
+            String company = RecruiterCompanyUtils.resolveCompany(admin, null);
+            if (company != null) {
+                builder.companyName(company);
+            }
         }
 
         return builder.build();

@@ -8,6 +8,7 @@ import {
 import { useEffect, useState } from 'react';
 import api, { unwrap } from '../services/api';
 import { chatSocket } from '../services/chatSocket';
+import { APP_NAME } from '../utils/appBranding';
 
 export default function Navbar() {
   const { user, isAdmin, logout } = useAuth();
@@ -108,7 +109,7 @@ export default function Navbar() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
           <Link to="/" className="flex items-center gap-2 text-lg font-bold text-primary-700 dark:text-primary-400 sm:text-xl">
             <Briefcase className="h-6 w-6 sm:h-7 sm:w-7" />
-            <span>Globalco Jobs</span>
+            <span>{APP_NAME}</span>
           </Link>
 
           <div className="flex items-center gap-2">

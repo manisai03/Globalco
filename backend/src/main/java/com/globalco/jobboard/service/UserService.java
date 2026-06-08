@@ -11,6 +11,7 @@ import com.globalco.jobboard.model.AuthenticatedAccount;
 import com.globalco.jobboard.model.User;
 import com.globalco.jobboard.repository.AdminRepository;
 import com.globalco.jobboard.repository.UserRepository;
+import com.globalco.jobboard.util.RecruiterCompanyUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -45,7 +46,12 @@ public class UserService {
             if (request.getFullName() != null) admin.setFullName(request.getFullName());
             if (request.getPhone() != null) admin.setPhone(request.getPhone());
             if (request.getLocation() != null) admin.setLocation(request.getLocation());
-            if (request.getCompanyName() != null) admin.setCompanyName(request.getCompanyName());
+            if (request.getCompanyName() != null) {
+                if (RecruiterCompanyUtils.isLegacyPlaceholder(request.getCompanyName())) {
+                    throw new BadRequestException("Enter your real company name (e.g. XPO)");
+                }
+                admin.setCompanyName(request.getCompanyName().trim());
+            }
             if (request.getCompanyWebsite() != null) admin.setCompanyWebsite(request.getCompanyWebsite());
             if (request.getCompanyDescription() != null) admin.setCompanyDescription(request.getCompanyDescription());
             if (request.getRecruiterTitle() != null) admin.setRecruiterTitle(request.getRecruiterTitle());

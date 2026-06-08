@@ -16,7 +16,7 @@ public class EmailService {
     private final JavaMailSender mailSender;
     private final BrevoApiEmailSender brevoApiEmailSender;
 
-    @Value("${app.mail.from:noreply@globalco.com}")
+    @Value("${app.mail.from:noreply@jobboard.app}")
     private String fromEmail;
 
     @Value("${spring.mail.username:}")
@@ -30,14 +30,14 @@ public class EmailService {
     }
 
     public void sendOtp(String toEmail, String otp) {
-        String subject = "Globalco Jobs - Password Reset OTP";
+        String subject = "Job Board - Password Reset OTP";
         String body = """
                 Your password reset OTP is: %s
 
                 This code expires in 10 minutes.
                 If you did not request this, please ignore this email.
 
-                — Globalco Jobs Team
+                — Job Board Team
                 """.formatted(otp);
 
         if (brevoApiEmailSender.isConfigured()) {

@@ -147,7 +147,7 @@ Status values: `PENDING`, `SHORTLISTED`, `REJECTED`, `INTERVIEW_SCHEDULED`, `HIR
 {
   "jobTitle": "Backend Developer",
   "skills": "Java, Spring Boot, MySQL",
-  "company": "Globalco",
+  "company": "XPO",
   "location": "Hyderabad"
 }
 ```

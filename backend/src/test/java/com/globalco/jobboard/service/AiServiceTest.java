@@ -18,7 +18,7 @@ class AiServiceTest {
         AiJobDescriptionRequest request = new AiJobDescriptionRequest();
         request.setJobTitle("Backend Developer");
         request.setSkills("Java, Spring Boot, MySQL");
-        request.setCompany("Globalco");
+        request.setCompany("XPO");
         request.setLocation("Hyderabad");
 
         String description = aiService.generateJobDescription(request);
