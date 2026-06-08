@@ -7,9 +7,11 @@ import com.globalco.jobboard.exception.BadRequestException;
 import com.globalco.jobboard.mapper.EntityMapper;
 import com.globalco.jobboard.model.AccountType;
 import com.globalco.jobboard.model.Admin;
+import com.globalco.jobboard.model.Application;
 import com.globalco.jobboard.model.AuthenticatedAccount;
 import com.globalco.jobboard.model.Message;
 import com.globalco.jobboard.model.User;
+import com.globalco.jobboard.repository.ApplicationRepository;
 import com.globalco.jobboard.repository.MessageRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,7 @@ import java.util.Map;
 public class MessageService {
 
     private final MessageRepository messageRepository;
+    private final ApplicationRepository applicationRepository;
     private final AccountService accountService;
     private final NotificationService notificationService;
     private final ChatSocketService chatSocketService;
@@ -47,6 +50,12 @@ public class MessageService {
             }
         }
 
+        if (sender instanceof Admin admin && receiver instanceof User user) {
+            if (!applicationRepository.hasRecruiterViewedApplicant(user.getId(), admin.getId())) {
+                throw new BadRequestException("View the candidate's application before messaging them");
+            }
+        }
+
         Message message = Message.builder()
                 .senderType(sender.getAccountType())
                 .senderId(sender.getId())
@@ -65,7 +74,7 @@ public class MessageService {
                     sender.getFullName() + " sent you a message", "NEW_MESSAGE", saved.getId());
         }
 
-        MessageResponse response = EntityMapper.toMessageResponse(saved, sender.getFullName(), receiver.getFullName());
+        MessageResponse response = toMessageResponse(saved, sender, receiver);
         chatSocketService.deliver(response);
         return response;
     }
@@ -86,10 +95,7 @@ public class MessageService {
         });
 
         return messages.stream()
-                .map(m -> EntityMapper.toMessageResponse(
-                        m,
-                        resolveName(m.getSenderType(), m.getSenderId()),
-                        resolveName(m.getReceiverType(), m.getReceiverId())))
+                .map(m -> toMessageResponse(m, currentAccount))
                 .toList();
     }
 
@@ -99,22 +105,38 @@ public class MessageService {
 
     public List<ContactResponse> getAvailableContacts(AuthenticatedAccount currentAccount) {
         Map<Long, ContactResponse> contacts = new LinkedHashMap<>();
-        AccountType partnerType = currentAccount.getAccountType() == AccountType.ADMIN
-                ? AccountType.USER : AccountType.ADMIN;
         boolean isAdminViewer = currentAccount.getAccountType() == AccountType.ADMIN;
+        AccountType partnerType = isAdminViewer ? AccountType.USER : AccountType.ADMIN;
 
         messageRepository.findConversationPartnerIds(currentAccount.getAccountType(), currentAccount.getId())
                 .forEach(partnerId -> {
                     AuthenticatedAccount partner = partnerType == AccountType.USER
                             ? accountService.getUserById(partnerId)
                             : accountService.getAdminById(partnerId);
-                    contacts.put(partnerId, toContact(partner, currentAccount, isAdminViewer));
+                    contacts.put(partnerId, toContact(partner, currentAccount));
                 });
+
+        if (isAdminViewer && currentAccount instanceof Admin admin) {
+            for (Application app : applicationRepository.findByJobCreatedByIdOrderByCreatedAtDesc(admin.getId())) {
+                User candidate = app.getUser();
+                contacts.putIfAbsent(candidate.getId(), toContact(candidate, currentAccount));
+            }
+        }
 
         return new ArrayList<>(contacts.values());
     }
 
-    private ContactResponse toContact(AuthenticatedAccount partner, AuthenticatedAccount currentAccount, boolean isAdminViewer) {
+    public long getUnreadCount(AuthenticatedAccount account) {
+        return messageRepository.countUnread(account.getAccountType(), account.getId());
+    }
+
+    private ContactResponse toContact(AuthenticatedAccount partner, AuthenticatedAccount currentAccount) {
+        boolean isAdminViewer = currentAccount.getAccountType() == AccountType.ADMIN;
+        boolean identityRevealed = !isAdminViewer
+                || partner.getAccountType() != AccountType.USER
+                || !(currentAccount instanceof Admin admin)
+                || applicationRepository.hasRecruiterViewedApplicant(partner.getId(), admin.getId());
+
         long unread = messageRepository.countUnreadFromPartner(
                 currentAccount.getAccountType(), currentAccount.getId(),
                 partner.getAccountType(), partner.getId());
@@ -124,10 +146,11 @@ public class MessageService {
 
         ContactResponse.ContactResponseBuilder builder = ContactResponse.builder()
                 .id(partner.getId())
-                .fullName(partner.getFullName())
-                .email(partner.getEmail())
+                .fullName(identityRevealed ? partner.getFullName() : EntityMapper.maskedCandidateLabel(partner.getId()))
+                .email(identityRevealed ? partner.getEmail() : "View application to reveal")
                 .unreadCount(unread)
-                .canReply(canReply);
+                .canReply(canReply)
+                .identityRevealed(identityRevealed);
 
         if (partner instanceof Admin admin) {
             builder.companyName(admin.getCompanyName());
@@ -136,13 +159,24 @@ public class MessageService {
         return builder.build();
     }
 
-    public long getUnreadCount(AuthenticatedAccount account) {
-        return messageRepository.countUnread(account.getAccountType(), account.getId());
+    private MessageResponse toMessageResponse(Message message, AuthenticatedAccount viewer) {
+        String senderName = resolveDisplayName(message.getSenderType(), message.getSenderId(), viewer);
+        String receiverName = resolveDisplayName(message.getReceiverType(), message.getReceiverId(), viewer);
+        return EntityMapper.toMessageResponse(message, senderName, receiverName);
     }
 
-    private String resolveName(AccountType type, Long id) {
+    private MessageResponse toMessageResponse(Message message, AuthenticatedAccount sender, AuthenticatedAccount receiver) {
+        return EntityMapper.toMessageResponse(message, sender.getFullName(), receiver.getFullName());
+    }
+
+    private String resolveDisplayName(AccountType type, Long id, AuthenticatedAccount viewer) {
         if (type == AccountType.ADMIN) {
             return accountService.getAdminById(id).getFullName();
+        }
+        if (viewer.getAccountType() == AccountType.ADMIN && viewer instanceof Admin admin) {
+            if (!applicationRepository.hasRecruiterViewedApplicant(id, admin.getId())) {
+                return EntityMapper.maskedCandidateLabel(id);
+            }
         }
         return accountService.getUserById(id).getFullName();
     }

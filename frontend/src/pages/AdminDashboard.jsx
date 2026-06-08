@@ -443,7 +443,9 @@ export default function AdminDashboard() {
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 text-sm text-slate-500">{app.userEmail}</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {app.recruiterViewed ? app.userEmail : 'View application to reveal contact details'}
+                      </p>
                       <p className="mt-1 text-sm"><strong>Applied for:</strong> {app.jobTitle} · {app.company}</p>
                       <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
                         {app.userLocation && <span>📍 {app.userLocation}</span>}

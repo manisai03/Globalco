@@ -52,4 +52,10 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
 
     @Query("SELECT COUNT(DISTINCT a.user.id) FROM Application a WHERE a.job.createdBy.id = :adminId")
     long countDistinctApplicantsByAdmin(Long adminId);
+
+    @Query("""
+            SELECT COUNT(a) > 0 FROM Application a
+            WHERE a.user.id = :userId AND a.job.createdBy.id = :adminId AND a.recruiterViewed = true
+            """)
+    boolean hasRecruiterViewedApplicant(@Param("userId") Long userId, @Param("adminId") Long adminId);
 }

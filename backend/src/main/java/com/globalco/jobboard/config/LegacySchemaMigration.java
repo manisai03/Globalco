@@ -24,8 +24,9 @@ public class LegacySchemaMigration implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         try {
-            // Always run — Hibernate may add account_* columns without dropping legacy user_id.
+            // Always run — Hibernate may add new columns without dropping legacy FKs.
             repairNotificationsSchema();
+            repairMessagesSchema();
 
             if (!columnExists("jobs", "created_by")) {
                 return;
@@ -99,6 +100,64 @@ public class LegacySchemaMigration implements ApplicationRunner {
         dropForeignKeys("notifications", "user_id");
         dropColumnIfExists("notifications", "user_id");
         log.info("Notifications table repair completed");
+    }
+
+    /**
+     * Drops legacy FK constraints on messages.sender_id / receiver_id that only reference users.
+     * Admins live in the admins table, so admin messages fail until these FKs are removed.
+     */
+    private void repairMessagesSchema() {
+        if (!tableExists("messages")) {
+            return;
+        }
+
+        log.info("Repairing messages table — ensuring account types and dropping legacy FKs");
+
+        addColumnIfMissing("messages", "sender_type", "VARCHAR(10)");
+        addColumnIfMissing("messages", "receiver_type", "VARCHAR(10)");
+
+        if (tableExists("roles")) {
+            jdbcTemplate.update("""
+                    UPDATE messages m
+                    INNER JOIN users su ON m.sender_id = su.id
+                    INNER JOIN roles sr ON su.role_id = sr.id
+                    SET m.sender_type = IF(sr.name = 'ROLE_ADMIN', 'ADMIN', 'USER')
+                    WHERE m.sender_type IS NULL
+                    """);
+
+            jdbcTemplate.update("""
+                    UPDATE messages m
+                    INNER JOIN users ru ON m.receiver_id = ru.id
+                    INNER JOIN roles rr ON ru.role_id = rr.id
+                    SET m.receiver_type = IF(rr.name = 'ROLE_ADMIN', 'ADMIN', 'USER')
+                    WHERE m.receiver_type IS NULL
+                    """);
+
+            if (tableExists("admins")) {
+                jdbcTemplate.update("""
+                        UPDATE messages m
+                        INNER JOIN users u ON m.sender_id = u.id
+                        INNER JOIN admins a ON a.email = u.email
+                        SET m.sender_id = a.id
+                        WHERE m.sender_type = 'ADMIN'
+                        """);
+
+                jdbcTemplate.update("""
+                        UPDATE messages m
+                        INNER JOIN users u ON m.receiver_id = u.id
+                        INNER JOIN admins a ON a.email = u.email
+                        SET m.receiver_id = a.id
+                        WHERE m.receiver_type = 'ADMIN'
+                        """);
+            }
+        }
+
+        jdbcTemplate.update("UPDATE messages SET sender_type = 'USER' WHERE sender_type IS NULL");
+        jdbcTemplate.update("UPDATE messages SET receiver_type = 'USER' WHERE receiver_type IS NULL");
+
+        dropForeignKeys("messages", "sender_id");
+        dropForeignKeys("messages", "receiver_id");
+        log.info("Messages table repair completed");
     }
 
     private void migrateAdminsFromUsers() {

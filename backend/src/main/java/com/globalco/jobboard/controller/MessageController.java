@@ -36,6 +36,11 @@ public class MessageController {
         return ApiResponse.ok(messageService.getConversationPartners(securityUtils.getCurrentAccount()));
     }
 
+    @GetMapping("/partners")
+    public ApiResponse<List<ContactResponse>> getPartners() {
+        return ApiResponse.ok(messageService.getConversationPartners(securityUtils.getCurrentAccount()));
+    }
+
     @GetMapping("/unread-count")
     public ApiResponse<Map<String, Long>> unreadCount() {
         return ApiResponse.ok(Map.of("count", messageService.getUnreadCount(securityUtils.getCurrentAccount())));

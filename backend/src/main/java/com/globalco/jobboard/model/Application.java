@@ -39,6 +39,9 @@ public class Application {
 
     private Integer matchScore;
 
+    @Builder.Default
+    private Boolean recruiterViewed = false;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;

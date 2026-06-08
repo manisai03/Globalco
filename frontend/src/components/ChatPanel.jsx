@@ -16,12 +16,12 @@ const FALLBACK_POLL_MS = 5000;
 
 
 
-function isPartnerMessage(msg, partnerId, myId) {
-
-  return (msg.senderId === partnerId && msg.receiverId === myId)
-
-    || (msg.senderId === myId && msg.receiverId === partnerId);
-
+function isPartnerMessage(msg, partnerId, myId, myType, partnerType) {
+  const iSent = msg.senderId === myId && msg.senderAccountType === myType;
+  const iReceived = msg.receiverId === myId && msg.receiverAccountType === myType;
+  const theySent = msg.senderId === partnerId && msg.senderAccountType === partnerType;
+  const theyReceived = msg.receiverId === partnerId && msg.receiverAccountType === partnerType;
+  return (theySent && iReceived) || (iSent && theyReceived);
 }
 
 
@@ -72,59 +72,8 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
 
 
 
-  const loadAdminApplicants = useCallback(async () => {
-
-    if (!isAdmin) return;
-
-    try {
-
-      const res = await api.get('/api/admin/applicants');
-
-      const apps = unwrap(res);
-
-      const unique = new Map();
-
-      apps.forEach((a) => {
-
-        if (!unique.has(a.userId)) {
-
-          unique.set(a.userId, {
-
-            id: a.userId,
-
-            fullName: a.userName,
-
-            email: a.userEmail,
-
-            unreadCount: 0,
-
-            canReply: true,
-
-          });
-
-        }
-
-      });
-
-      setContacts((prev) => {
-
-        const merged = new Map(prev.map((c) => [c.id, c]));
-
-        unique.forEach((v, k) => {
-
-          if (!merged.has(k)) merged.set(k, v);
-
-        });
-
-        return Array.from(merged.values());
-
-      });
-
-    } catch { /* ignore */ }
-
-  }, [isAdmin]);
-
-
+  const myAccountType = isAdmin ? 'ADMIN' : 'USER';
+  const partnerAccountType = isAdmin ? 'USER' : 'ADMIN';
 
   const loadMessages = useCallback(async (partnerId, silent = false) => {
 
@@ -154,7 +103,7 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
 
     const partnerId = selectedRef.current?.id;
 
-    if (partnerId && isPartnerMessage(msg, partnerId, user.id)) {
+    if (partnerId && isPartnerMessage(msg, partnerId, user.id, myAccountType, partnerAccountType)) {
 
       setMessages((prev) => {
 
@@ -176,7 +125,7 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
 
     onUnreadChange?.();
 
-  }, [user.id, loadContacts, onUnreadChange]);
+  }, [user.id, myAccountType, partnerAccountType, loadContacts, onUnreadChange]);
 
 
 
@@ -190,9 +139,7 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
 
     await loadContacts();
 
-    if (isAdmin) await loadAdminApplicants();
-
-  }, [loadMessages, loadContacts, loadAdminApplicants, isAdmin]);
+  }, [loadMessages, loadContacts]);
 
 
 
@@ -200,9 +147,7 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
 
     loadContacts();
 
-    if (isAdmin) loadAdminApplicants();
-
-  }, [loadContacts, loadAdminApplicants, isAdmin]);
+  }, [loadContacts]);
 
 
 
@@ -220,23 +165,19 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
 
     const id = Number(userId);
 
-    const contact = contacts.find((c) => c.id === id);
+    api.get('/api/messages/partners').then((res) => {
 
-    if (contact) setSelected(contact);
+      const list = unwrap(res);
 
-    else if (isAdmin) {
+      setContacts(list);
 
-      api.get(`/api/users/${id}`).then((res) => {
+      const contact = list.find((c) => c.id === id);
 
-        const u = unwrap(res);
+      if (contact) setSelected(contact);
 
-        setSelected({ ...u, unreadCount: 0, canReply: true });
+    }).catch(() => {});
 
-      }).catch(() => {});
-
-    }
-
-  }, [searchParams, contacts, isAdmin]);
+  }, [searchParams]);
 
 
 
@@ -276,7 +217,7 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
 
 
 
-  const canSend = isAdmin || selected?.canReply;
+  const canSend = isAdmin ? selected?.identityRevealed : selected?.canReply;
 
 
 
@@ -299,9 +240,9 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
       id: `temp-${Date.now()}`,
 
       senderId: user.id,
-
+      senderAccountType: myAccountType,
       receiverId: selected.id,
-
+      receiverAccountType: partnerAccountType,
       content: text,
 
       createdAt: new Date().toISOString(),
@@ -448,13 +389,11 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
                 <p className="font-semibold">{selected.fullName}</p>
 
                 <p className="text-xs text-slate-500">
-
-                  {isAdmin
-
-                    ? (live ? 'Start or continue conversation' : 'Reconnecting…')
-
-                    : (canSend ? (live ? 'Reply to recruiter · instant delivery' : 'Reply mode · syncing') : 'Waiting for recruiter to message you')}
-
+                  {isAdmin && !selected.identityRevealed
+                    ? 'View their application in Applicants to unlock messaging'
+                    : isAdmin
+                      ? (live ? 'Conversation with candidate' : 'Reconnecting…')
+                      : (canSend ? (live ? 'Reply to recruiter · instant delivery' : 'Reply mode · syncing') : 'Waiting for recruiter to message you')}
                 </p>
 
               </div>
@@ -479,11 +418,11 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
 
               {messages.map((m) => (
 
-                <div key={m.id} className={`flex ${m.senderId === user.id ? 'justify-end' : 'justify-start'}`}>
+                <div key={m.id} className={`flex ${m.senderId === user.id && m.senderAccountType === myAccountType ? 'justify-end' : 'justify-start'}`}>
 
                   <div className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
 
-                    m.senderId === user.id ? 'bg-primary-600 text-white' : 'bg-slate-100 dark:bg-slate-800'
+                    m.senderId === user.id && m.senderAccountType === myAccountType ? 'bg-primary-600 text-white' : 'bg-slate-100 dark:bg-slate-800'
 
                   }`}>
 
@@ -534,6 +473,14 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
                 </button>
 
               </form>
+
+            ) : isAdmin ? (
+
+              <div className="border-t border-slate-200 p-4 text-center text-sm text-slate-500 dark:border-slate-800">
+
+                Open this candidate&apos;s application from the Applicants tab before sending a message.
+
+              </div>
 
             ) : (
 

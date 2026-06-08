@@ -102,10 +102,11 @@ public class ApplicationService {
 
     public List<ApplicationResponse> getAllApplicants(Admin admin) {
         return applicationRepository.findByJobCreatedByIdOrderByCreatedAtDesc(admin.getId()).stream()
-                .map(EntityMapper::toApplicationResponse)
+                .map(app -> EntityMapper.toApplicationResponse(app, true))
                 .toList();
     }
 
+    @Transactional
     public ApplicationDetailResponse getApplicationDetail(Long id, AuthenticatedAccount requester) {
         Application app = applicationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found"));
@@ -116,6 +117,11 @@ public class ApplicationService {
                 && app.getJob().getCreatedBy().getId().equals(admin.getId());
         if (!isOwner && !isJobOwner) {
             throw new BadRequestException("Not authorized to view this application");
+        }
+
+        if (isJobOwner && !Boolean.TRUE.equals(app.getRecruiterViewed())) {
+            app.setRecruiterViewed(true);
+            applicationRepository.save(app);
         }
 
         long jobApplicantCount = applicationRepository.findByJobIdOrderByCreatedAtDesc(app.getJob().getId()).size();

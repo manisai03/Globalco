@@ -23,6 +23,7 @@ public class ApplicationResponse {
     private Boolean hasResume;
     private String status;
     private Integer matchScore;
+    private Boolean recruiterViewed;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

@@ -12,4 +12,5 @@ public class ContactResponse {
     private String companyName;
     private long unreadCount;
     private boolean canReply;
+    private boolean identityRevealed;
 }

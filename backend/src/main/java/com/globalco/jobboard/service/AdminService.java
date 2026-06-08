@@ -30,7 +30,7 @@ public class AdminService {
         List<ApplicationResponse> recent = applicationRepository
                 .findByJobCreatedByIdOrderByCreatedAtDesc(adminId).stream()
                 .limit(10)
-                .map(EntityMapper::toApplicationResponse)
+                .map(app -> EntityMapper.toApplicationResponse(app, true))
                 .toList();
 
         Map<String, Long> appsPerJob = applicationRepository.countByJobForAdmin(adminId).stream()

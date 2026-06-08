@@ -106,26 +106,37 @@ public final class EntityMapper {
     }
 
     public static ApplicationResponse toApplicationResponse(Application app) {
+        return toApplicationResponse(app, false);
+    }
+
+    public static ApplicationResponse toApplicationResponse(Application app, boolean maskUnviewedCandidate) {
         String resume = app.getResumeUrl();
+        boolean revealed = !maskUnviewedCandidate || Boolean.TRUE.equals(app.getRecruiterViewed());
+        Long userId = app.getUser().getId();
         return ApplicationResponse.builder()
                 .id(app.getId())
                 .jobId(app.getJob().getId())
                 .jobTitle(app.getJob().getTitle())
                 .company(app.getJob().getCompany())
-                .userId(app.getUser().getId())
-                .userName(app.getUser().getFullName())
-                .userEmail(app.getUser().getEmail())
-                .userPhone(app.getUser().getPhone())
-                .userLocation(app.getUser().getLocation())
-                .userSkills(app.getUser().getSkills())
-                .resumeUrl(resume)
-                .coverLetter(app.getCoverLetter())
-                .hasResume(resume != null && !resume.isBlank())
+                .userId(userId)
+                .userName(revealed ? app.getUser().getFullName() : maskedCandidateLabel(userId))
+                .userEmail(revealed ? app.getUser().getEmail() : null)
+                .userPhone(revealed ? app.getUser().getPhone() : null)
+                .userLocation(revealed ? app.getUser().getLocation() : null)
+                .userSkills(revealed ? app.getUser().getSkills() : null)
+                .resumeUrl(revealed ? resume : null)
+                .coverLetter(revealed ? app.getCoverLetter() : null)
+                .hasResume(revealed && resume != null && !resume.isBlank())
                 .status(app.getStatus())
                 .matchScore(app.getMatchScore())
+                .recruiterViewed(app.getRecruiterViewed())
                 .createdAt(app.getCreatedAt())
                 .updatedAt(app.getUpdatedAt())
                 .build();
+    }
+
+    public static String maskedCandidateLabel(Long userId) {
+        return "Candidate #" + userId;
     }
 
     public static ApplicationDetailResponse toApplicationDetailResponse(
