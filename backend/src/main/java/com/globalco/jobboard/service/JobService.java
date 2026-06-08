@@ -20,7 +20,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -69,6 +70,48 @@ public class JobService {
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found"));
         return mapWithUserContext(job, currentUser);
+    }
+
+    @Transactional(readOnly = true)
+    public List<JobResponse> getSimilarJobs(Long id, User currentUser) {
+        Job job = jobRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Job not found"));
+        String category = job.getCategory() != null ? job.getCategory() : "Engineering";
+        return jobRepository.findTop6ByCategoryAndStatusAndIdNotOrderByCreatedAtDesc(category, "OPEN", id).stream()
+                .map(j -> mapWithUserContext(j, currentUser))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<JobResponse> getRecommendedJobs(User currentUser) {
+        List<Job> openJobs = jobRepository.findTop12ByStatusOrderByCreatedAtDesc("OPEN");
+        if (currentUser == null || currentUser.getSkills() == null || currentUser.getSkills().isBlank()) {
+            return openJobs.stream().limit(6).map(j -> mapWithUserContext(j, null)).toList();
+        }
+        Set<String> userSkills = parseSkillTokens(currentUser.getSkills());
+        return openJobs.stream()
+                .sorted((a, b) -> Integer.compare(skillOverlap(b, userSkills), skillOverlap(a, userSkills)))
+                .limit(6)
+                .map(j -> mapWithUserContext(j, currentUser))
+                .toList();
+    }
+
+    private static Set<String> parseSkillTokens(String skills) {
+        return Arrays.stream(skills.toLowerCase().split("[,;|/]"))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toSet());
+    }
+
+    private static int skillOverlap(Job job, Set<String> userSkills) {
+        if (job.getSkills() == null || job.getSkills().isBlank()) return 0;
+        Set<String> jobSkills = parseSkillTokens(job.getSkills());
+        int overlap = 0;
+        for (String skill : userSkills) {
+            if (jobSkills.contains(skill)) overlap++;
+            else if (jobSkills.stream().anyMatch(js -> js.contains(skill) || skill.contains(js))) overlap++;
+        }
+        return overlap;
     }
 
     @Transactional

@@ -10,6 +10,7 @@ import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import Jobs from './pages/Jobs';
 import JobDetails from './pages/JobDetails';
+import Company from './pages/Company';
 import Profile from './pages/Profile';
 import CandidateDashboard from './pages/CandidateDashboard';
 import AdminDashboard from './pages/AdminDashboard';
@@ -30,6 +31,7 @@ export default function App() {
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/jobs" element={<Jobs />} />
               <Route path="/jobs/:id" element={<JobDetails />} />
+              <Route path="/companies/:id" element={<Company />} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="/dashboard" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />

@@ -286,6 +286,8 @@ export default function NaukriStyleProfile() {
       skills: profile.skills,
 
       currentTitle: profile.currentTitle,
+      headline: profile.headline,
+      openToWork: profile.openToWork,
 
       companyName: profile.companyName,
 
@@ -575,7 +577,7 @@ export default function NaukriStyleProfile() {
 
                 ['fullName', 'Full Name'], ['phone', 'Phone'], ['location', 'Location'],
 
-                ['currentTitle', 'Current / Desired Title'], ['email', 'Email'],
+                ['currentTitle', 'Current / Desired Title'], ['headline', 'Professional headline'], ['email', 'Email'],
 
               ].map(([key, label]) => (
 
@@ -606,6 +608,24 @@ export default function NaukriStyleProfile() {
                 <textarea value={profile.bio || ''} onChange={(e) => setProfile({ ...profile, bio: e.target.value })} rows={3} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" placeholder="Brief summary about yourself..." />
 
               </div>
+
+              {!isAdmin && (
+                <div className="sm:col-span-2 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/50">
+                  <div>
+                    <p className="text-sm font-medium">Open to work</p>
+                    <p className="text-xs text-slate-500">Let recruiters know you&apos;re actively looking</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={!!profile.openToWork}
+                    onClick={() => setProfile({ ...profile, openToWork: !profile.openToWork })}
+                    className={`relative h-7 w-12 rounded-full transition ${profile.openToWork ? 'bg-primary-600' : 'bg-slate-300 dark:bg-slate-600'}`}
+                  >
+                    <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition ${profile.openToWork ? 'left-5' : 'left-0.5'}`} />
+                  </button>
+                </div>
+              )}
 
             </div>
 

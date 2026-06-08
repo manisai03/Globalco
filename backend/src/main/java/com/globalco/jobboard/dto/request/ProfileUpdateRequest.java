@@ -24,6 +24,11 @@ public class ProfileUpdateRequest {
     @Size(max = 150)
     private String currentTitle;
 
+    @Size(max = 220)
+    private String headline;
+
+    private Boolean openToWork;
+
     @Size(max = 150)
     private String companyName;
 

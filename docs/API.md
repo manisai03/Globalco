@@ -61,8 +61,10 @@ Response:
 |--------|----------|------|-------------|
 | GET | `/api/jobs` | - | List/search jobs (paginated) |
 | GET | `/api/jobs/featured` | - | Featured jobs |
+| GET | `/api/jobs/recommended` | - | Skill-based recommendations (better when logged in) |
 | GET | `/api/jobs/categories` | - | Category list |
-| GET | `/api/jobs/{id}` | - | Job details |
+| GET | `/api/jobs/{id}/similar` | - | Similar jobs by category |
+| GET | `/api/jobs/{id}` | - | Job details (includes recruiter company info) |
 | POST | `/api/jobs` | Admin | Create job |
 | PUT | `/api/jobs/{id}` | Admin | Update job |
 | DELETE | `/api/jobs/{id}` | Admin | Delete job |
@@ -80,12 +82,27 @@ Response:
 |--------|----------|------|-------------|
 | POST | `/api/applications/jobs/{jobId}` | ✓ | Apply (multipart) |
 | GET | `/api/applications/me` | ✓ | My applications |
+| GET | `/api/applications/interviews/me` | ✓ | My scheduled interviews |
 | GET | `/api/applications/jobs/{jobId}` | Admin | Job applicants |
 | PATCH | `/api/applications/{id}/status` | Admin | Update status |
 | DELETE | `/api/applications/{id}` | ✓ | Withdraw |
 | POST | `/api/applications/interviews` | Admin | Schedule interview |
 
 Status values: `PENDING`, `SHORTLISTED`, `REJECTED`, `INTERVIEW_SCHEDULED`, `HIRED`, `WITHDRAWN`
+
+## Saved Searches (Job Alerts)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/saved-searches` | ✓ | List saved searches with match counts |
+| POST | `/api/saved-searches` | ✓ | Save current filter set as alert |
+| DELETE | `/api/saved-searches/{id}` | ✓ | Remove saved search |
+
+## Companies
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/companies/{adminId}` | - | Company profile + open jobs |
 
 ## Saved Jobs
 

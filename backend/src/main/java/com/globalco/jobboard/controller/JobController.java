@@ -45,9 +45,19 @@ public class JobController {
         return ApiResponse.ok(jobService.getFeaturedJobs(securityUtils.getCurrentUserOrNull()));
     }
 
+    @GetMapping("/recommended")
+    public ApiResponse<List<JobResponse>> recommendedJobs() {
+        return ApiResponse.ok(jobService.getRecommendedJobs(securityUtils.getCurrentUserOrNull()));
+    }
+
     @GetMapping("/categories")
     public ApiResponse<List<String>> categories() {
         return ApiResponse.ok(jobService.getCategories());
+    }
+
+    @GetMapping("/{id}/similar")
+    public ApiResponse<List<JobResponse>> similarJobs(@PathVariable Long id) {
+        return ApiResponse.ok(jobService.getSimilarJobs(id, securityUtils.getCurrentUserOrNull()));
     }
 
     @GetMapping("/{id}")

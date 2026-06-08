@@ -20,6 +20,8 @@ public class UserResponse {
     private String profilePictureUrl;
     private LocalDateTime profilePictureUploadedAt;
     private String currentTitle;
+    private String headline;
+    private Boolean openToWork;
     private String educationProfile;
     private String internshipsProfile;
     private String employmentProfile;

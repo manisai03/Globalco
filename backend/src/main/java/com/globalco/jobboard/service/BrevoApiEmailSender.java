@@ -60,8 +60,13 @@ public class BrevoApiEmailSender {
                     .toBodilessEntity();
             log.info("OTP email sent via Brevo API to {}", toEmail);
         } catch (RestClientResponseException ex) {
-            log.error("Brevo API rejected email to {}: {} {}", toEmail, ex.getStatusCode(), ex.getResponseBodyAsString());
+            String responseBody = ex.getResponseBodyAsString();
+            log.error("Brevo API rejected email to {}: {} {}", toEmail, ex.getStatusCode(), responseBody);
             if (ex.getStatusCode().value() == 401) {
+                if (responseBody != null && responseBody.contains("unrecognised IP")) {
+                    throw new BadRequestException(
+                            "Brevo blocked Render's IP. In Brevo go to Security → Authorized IPs and disable IP blocking for API keys, or add your Render server IP.");
+                }
                 throw new BadRequestException(
                         "Invalid BREVO_API_KEY. Use an API key from Brevo → SMTP & API → API Keys (starts with xkeysib-), not an SMTP key.");
             }

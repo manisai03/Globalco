@@ -26,4 +26,8 @@ public interface JobRepository extends JpaRepository<Job, Long>, JpaSpecificatio
 
     @Query("SELECT j.category, COUNT(j) FROM Job j WHERE j.createdBy.id = :adminId GROUP BY j.category")
     List<Object[]> countByCategoryForAdmin(Long adminId);
+
+    List<Job> findTop6ByCategoryAndStatusAndIdNotOrderByCreatedAtDesc(String category, String status, Long id);
+
+    List<Job> findTop12ByStatusOrderByCreatedAtDesc(String status);
 }

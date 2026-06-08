@@ -24,6 +24,9 @@ public class JobResponse {
     private Boolean featured;
     private Long createdById;
     private String createdByName;
+    private String companyDescription;
+    private String companyWebsite;
+    private String recruiterTitle;
     private LocalDateTime createdAt;
     private Boolean saved;
     private Boolean applied;

@@ -5,6 +5,7 @@ import com.globalco.jobboard.dto.request.InterviewRequest;
 import com.globalco.jobboard.dto.response.ApiResponse;
 import com.globalco.jobboard.dto.response.ApplicationDetailResponse;
 import com.globalco.jobboard.dto.response.ApplicationResponse;
+import com.globalco.jobboard.dto.response.InterviewResponse;
 import com.globalco.jobboard.security.SecurityUtils;
 import com.globalco.jobboard.service.ApplicationService;
 import jakarta.validation.Valid;
@@ -38,6 +39,11 @@ public class ApplicationController {
     @GetMapping("/me")
     public ApiResponse<List<ApplicationResponse>> myApplications() {
         return ApiResponse.ok(applicationService.getMyApplications(securityUtils.getCurrentUser()));
+    }
+
+    @GetMapping("/interviews/me")
+    public ApiResponse<List<InterviewResponse>> myInterviews() {
+        return ApiResponse.ok(applicationService.getMyInterviews(securityUtils.getCurrentUser()));
     }
 
     @GetMapping("/{id}")

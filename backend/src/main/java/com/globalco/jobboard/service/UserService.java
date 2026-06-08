@@ -59,6 +59,8 @@ public class UserService {
         if (request.getBio() != null) user.setBio(request.getBio());
         if (request.getSkills() != null) user.setSkills(request.getSkills());
         if (request.getCurrentTitle() != null) user.setCurrentTitle(request.getCurrentTitle());
+        if (request.getHeadline() != null) user.setHeadline(request.getHeadline());
+        if (request.getOpenToWork() != null) user.setOpenToWork(request.getOpenToWork());
         if (request.getEducationProfile() != null) user.setEducationProfile(request.getEducationProfile());
         if (request.getInternshipsProfile() != null) user.setInternshipsProfile(request.getInternshipsProfile());
         if (request.getEmploymentProfile() != null) user.setEmploymentProfile(request.getEmploymentProfile());

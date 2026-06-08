@@ -21,6 +21,8 @@ public final class EntityMapper {
                 .profilePictureUrl(user.getProfilePictureUrl())
                 .profilePictureUploadedAt(user.getProfilePictureUploadedAt())
                 .currentTitle(user.getCurrentTitle())
+                .headline(user.getHeadline())
+                .openToWork(user.getOpenToWork())
                 .educationProfile(user.getEducationProfile())
                 .internshipsProfile(user.getInternshipsProfile())
                 .employmentProfile(user.getEmploymentProfile())
@@ -77,10 +79,30 @@ public final class EntityMapper {
 
         if (job.getCreatedBy() != null) {
             builder.createdById(job.getCreatedBy().getId())
-                    .createdByName(job.getCreatedBy().getFullName());
+                    .createdByName(job.getCreatedBy().getFullName())
+                    .companyDescription(job.getCreatedBy().getCompanyDescription())
+                    .companyWebsite(job.getCreatedBy().getCompanyWebsite())
+                    .recruiterTitle(job.getCreatedBy().getRecruiterTitle());
         }
 
         return builder.build();
+    }
+
+    public static InterviewResponse toInterviewResponse(Interview interview) {
+        Application app = interview.getApplication();
+        return InterviewResponse.builder()
+                .id(interview.getId())
+                .applicationId(app.getId())
+                .jobId(app.getJob().getId())
+                .jobTitle(app.getJob().getTitle())
+                .company(app.getJob().getCompany())
+                .scheduledAt(interview.getScheduledAt())
+                .location(interview.getLocation())
+                .notes(interview.getNotes())
+                .status(interview.getStatus())
+                .applicationStatus(app.getStatus())
+                .createdAt(interview.getCreatedAt())
+                .build();
     }
 
     public static ApplicationResponse toApplicationResponse(Application app) {

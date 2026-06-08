@@ -4,6 +4,7 @@ import com.globalco.jobboard.dto.request.ApplicationRequest;
 import com.globalco.jobboard.dto.request.InterviewRequest;
 import com.globalco.jobboard.dto.response.ApplicationDetailResponse;
 import com.globalco.jobboard.dto.response.ApplicationResponse;
+import com.globalco.jobboard.dto.response.InterviewResponse;
 import com.globalco.jobboard.exception.BadRequestException;
 import com.globalco.jobboard.exception.ResourceNotFoundException;
 import com.globalco.jobboard.mapper.EntityMapper;
@@ -83,6 +84,13 @@ public class ApplicationService {
     public List<ApplicationResponse> getMyApplications(User user) {
         return applicationRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).stream()
                 .map(EntityMapper::toApplicationResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<InterviewResponse> getMyInterviews(User user) {
+        return interviewRepository.findByApplicationUserIdOrderByScheduledAtAsc(user.getId()).stream()
+                .map(EntityMapper::toInterviewResponse)
                 .toList();
     }
 

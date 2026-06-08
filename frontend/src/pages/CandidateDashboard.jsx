@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { Link, useSearchParams } from 'react-router-dom';
 
-import { Eye, FileText, Bookmark } from 'lucide-react';
+import { Eye, FileText, Bookmark, Bell, Calendar, MapPin, Trash2 } from 'lucide-react';
 
 import ApplicationDetailModal from '../components/ApplicationDetailModal';
 
@@ -42,7 +42,11 @@ const DASHBOARD_TABS = [
 
   { key: 'applications', label: 'Applications', icon: FileText },
 
+  { key: 'interviews', label: 'Interviews', icon: Calendar },
+
   { key: 'saved', label: 'Saved Jobs', icon: Bookmark },
+
+  { key: 'alerts', label: 'Job Alerts', icon: Bell },
 
 ];
 
@@ -64,6 +68,12 @@ export default function CandidateDashboard() {
 
   const [savedJobs, setSavedJobs] = useState([]);
 
+  const [recommended, setRecommended] = useState([]);
+
+  const [interviews, setInterviews] = useState([]);
+
+  const [savedSearches, setSavedSearches] = useState([]);
+
   const [loading, setLoading] = useState(true);
 
   const [selectedAppId, setSelectedAppId] = useState(null);
@@ -84,17 +94,29 @@ export default function CandidateDashboard() {
 
     try {
 
-      const [apps, saved] = await Promise.all([
+      const [apps, saved, rec, ints, alerts] = await Promise.all([
 
         api.get('/api/applications/me'),
 
         api.get('/api/saved-jobs'),
+
+        api.get('/api/jobs/recommended'),
+
+        api.get('/api/applications/interviews/me'),
+
+        api.get('/api/saved-searches'),
 
       ]);
 
       setApplications(unwrap(apps));
 
       setSavedJobs(unwrap(saved));
+
+      setRecommended(unwrap(rec));
+
+      setInterviews(unwrap(ints));
+
+      setSavedSearches(unwrap(alerts));
 
     } finally {
 
@@ -132,21 +154,63 @@ export default function CandidateDashboard() {
 
 
 
+  const deleteAlert = async (id) => {
+
+    await api.delete(`/api/saved-searches/${id}`);
+
+    toast.success('Job alert removed');
+
+    load();
+
+  };
+
+
+
+  const alertToJobsUrl = (alert) => {
+
+    const q = new URLSearchParams();
+
+    if (alert.search) q.set('search', alert.search);
+
+    if (alert.location) q.set('location', alert.location);
+
+    if (alert.jobType) q.set('jobType', alert.jobType);
+
+    if (alert.experienceLevel) q.set('experienceLevel', alert.experienceLevel);
+
+    if (alert.category) q.set('category', alert.category);
+
+    if (alert.minSalary) q.set('minSalary', String(alert.minSalary));
+
+    if (alert.sort) q.set('sort', alert.sort);
+
+    return `/jobs?${q}`;
+
+  };
+
+
+
   if (loading) return <div className="flex justify-center py-20"><LoadingSpinner /></div>;
 
 
 
   const pageTitle = tab === 'messages' ? 'Messages' : tab === 'profile' ? 'Profile' : 'My Dashboard';
 
-  const pageSubtitle = tab === 'messages'
+  const pageSubtitle = {
 
-    ? 'View and reply to recruiter messages'
+    messages: 'View and reply to recruiter messages',
 
-    : tab === 'profile'
+    profile: 'Manage your profile, education, and experience',
 
-      ? 'Manage your profile, education, and experience'
+    interviews: 'Upcoming and scheduled interviews',
 
-      : 'Track your applications and saved jobs';
+    alerts: 'Saved searches — run them anytime from here',
+
+    saved: 'Jobs you bookmarked for later',
+
+    applications: 'Track your applications and saved jobs',
+
+  }[tab] || 'Track your applications and saved jobs';
 
 
 
@@ -192,9 +256,33 @@ export default function CandidateDashboard() {
 
               {key === 'saved' && <span className="opacity-75">({savedJobs.length})</span>}
 
+              {key === 'interviews' && <span className="opacity-75">({interviews.length})</span>}
+
+              {key === 'alerts' && <span className="opacity-75">({savedSearches.length})</span>}
+
             </button>
 
           ))}
+
+        </div>
+
+      )}
+
+
+
+      {tab === 'applications' && recommended.length > 0 && (
+
+        <div className="mt-8">
+
+          <h2 className="text-lg font-semibold">Recommended for you</h2>
+
+          <p className="text-sm text-slate-500">Jobs matching your profile skills</p>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+
+            {recommended.slice(0, 3).map((job) => <JobCard key={job.id} job={job} />)}
+
+          </div>
 
         </div>
 
@@ -285,6 +373,120 @@ export default function CandidateDashboard() {
               {savedJobs.map((job) => <JobCard key={job.id} job={job} />)}
 
             </div>
+
+          )}
+
+        </div>
+
+      )}
+
+
+
+      {tab === 'interviews' && (
+
+        <div className="mt-8 space-y-4">
+
+          {interviews.length === 0 ? (
+
+            <p className="rounded-xl border border-dashed border-slate-300 p-12 text-center text-slate-500">
+
+              No interviews scheduled yet. Keep applying — recruiters will schedule here.
+
+            </p>
+
+          ) : (
+
+            interviews.map((iv) => (
+
+              <div key={iv.id} className="card flex flex-wrap items-start justify-between gap-4 p-5">
+
+                <div>
+
+                  <Link to={`/jobs/${iv.jobId}`} className="font-semibold hover:text-primary-600">{iv.jobTitle}</Link>
+
+                  <p className="text-sm text-slate-500">{iv.company}</p>
+
+                  <p className="mt-2 flex items-center gap-1 text-sm">
+
+                    <Calendar className="h-4 w-4 text-primary-600" />
+
+                    {new Date(iv.scheduledAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+
+                  </p>
+
+                  {iv.location && (
+
+                    <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
+
+                      <MapPin className="h-4 w-4" />{iv.location}
+
+                    </p>
+
+                  )}
+
+                  {iv.notes && <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{iv.notes}</p>}
+
+                </div>
+
+                <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusColors.INTERVIEW_SCHEDULED}`}>
+
+                  {iv.status}
+
+                </span>
+
+              </div>
+
+            ))
+
+          )}
+
+        </div>
+
+      )}
+
+
+
+      {tab === 'alerts' && (
+
+        <div className="mt-8 space-y-4">
+
+          {savedSearches.length === 0 ? (
+
+            <p className="rounded-xl border border-dashed border-slate-300 p-12 text-center text-slate-500">
+
+              No job alerts yet. <Link to="/jobs" className="text-primary-600 hover:underline">Search jobs</Link> and use &quot;Save job alert&quot; in filters.
+
+            </p>
+
+          ) : (
+
+            savedSearches.map((alert) => (
+
+              <div key={alert.id} className="card flex flex-wrap items-center justify-between gap-4 p-5">
+
+                <div>
+
+                  <p className="font-semibold">{alert.name}</p>
+
+                  <p className="mt-1 text-sm text-slate-500">{alert.matchCount} matching open jobs</p>
+
+                </div>
+
+                <div className="flex items-center gap-3">
+
+                  <Link to={alertToJobsUrl(alert)} className="btn-primary text-sm">View jobs</Link>
+
+                  <button type="button" onClick={() => deleteAlert(alert.id)} className="rounded-lg p-2 text-slate-400 hover:text-red-600" aria-label="Delete alert">
+
+                    <Trash2 className="h-4 w-4" />
+
+                  </button>
+
+                </div>
+
+              </div>
+
+            ))
 
           )}
 

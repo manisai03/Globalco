@@ -42,6 +42,10 @@ public class User implements AuthenticatedAccount {
     private LocalDateTime profilePictureUploadedAt;
 
     private String currentTitle;
+    private String headline;
+
+    @Builder.Default
+    private Boolean openToWork = false;
     @Column(columnDefinition = "TEXT")
     private String educationProfile;
     @Column(columnDefinition = "TEXT")
