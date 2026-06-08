@@ -14,6 +14,11 @@ public class PublicController {
 
     private final JobService jobService;
 
+    @GetMapping("/health")
+    public ApiResponse<Map<String, String>> health() {
+        return ApiResponse.ok(Map.of("status", "UP"));
+    }
+
     @GetMapping("/stats")
     public ApiResponse<Map<String, Long>> stats() {
         return ApiResponse.ok(Map.of(
