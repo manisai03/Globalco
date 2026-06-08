@@ -12,7 +12,6 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebSocket
@@ -38,6 +37,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 .forEach(patterns::add);
         registry.addHandler(chatWebSocketHandler, "/ws/chat")
                 .addInterceptors(jwtHandshakeInterceptor)
-                .setAllowedOriginPatterns(patterns.stream().distinct().collect(Collectors.toList()));
+                .setAllowedOriginPatterns(patterns.stream().distinct().toArray(String[]::new));
     }
 }
