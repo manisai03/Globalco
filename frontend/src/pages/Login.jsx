@@ -152,14 +152,6 @@ export default function Login() {
 
       </p>
 
-      <div className="mt-4 rounded-xl bg-slate-100 p-4 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-
-        <p><strong>Demo Admin:</strong> admin@globalco.com / admin123</p>
-
-        <p><strong>Demo Candidate:</strong> candidate@globalco.com / user123</p>
-
-      </div>
-
     </div>
 
   );
