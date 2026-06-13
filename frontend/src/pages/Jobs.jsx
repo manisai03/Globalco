@@ -14,6 +14,11 @@ import toast from 'react-hot-toast';
 const CATEGORIES = ['Engineering', 'Design', 'Marketing', 'Sales', 'Finance', 'HR', 'Operations', 'Data Science'];
 const JOB_TYPES = ['Full-time', 'Part-time', 'Contract', 'Remote', 'Internship'];
 const EXPERIENCE = ['Entry', 'Mid-Level', 'Senior', 'Lead'];
+const POSTED_WITHIN = [
+  { value: 'today', label: 'Today' },
+  { value: '3days', label: 'Last 3 days' },
+  { value: 'week', label: 'Past week' },
+];
 const PAGE_SIZE = 12;
 
 function readFilters(params) {
@@ -24,6 +29,7 @@ function readFilters(params) {
     experienceLevel: params.get('experienceLevel') || '',
     category: params.get('category') || '',
     minSalary: params.get('minSalary') || '',
+    postedWithin: params.get('postedWithin') || '',
     sort: params.get('sort') || 'recent',
     page: Number(params.get('page') || 0),
     job: params.get('job') || '',
@@ -122,6 +128,7 @@ export default function Jobs() {
     filters.experienceLevel && { key: 'experienceLevel', label: filters.experienceLevel },
     filters.category && { key: 'category', label: filters.category },
     filters.minSalary && { key: 'minSalary', label: `Min ₹${filters.minSalary}` },
+    filters.postedWithin && { key: 'postedWithin', label: POSTED_WITHIN.find((p) => p.value === filters.postedWithin)?.label || filters.postedWithin },
   ].filter(Boolean);
 
   const clearAll = () => {
@@ -145,7 +152,7 @@ export default function Jobs() {
   const saveJobAlert = async () => {
     if (!user) return toast.error('Please login to save job alerts');
     const f = readFilters(searchParams);
-    if (!f.search && !f.location && !f.jobType && !f.experienceLevel && !f.category && !f.minSalary) {
+    if (!f.search && !f.location && !f.jobType && !f.experienceLevel && !f.category && !f.minSalary && !f.postedWithin) {
       return toast.error('Add at least one filter before saving an alert');
     }
     try {
@@ -205,7 +212,7 @@ export default function Jobs() {
           <Bell className="h-4 w-4" /> Save job alert
         </button>
       )}
-      {(filters.location || filters.jobType || filters.experienceLevel || filters.category || filters.minSalary) && (
+      {(filters.location || filters.jobType || filters.experienceLevel || filters.category || filters.minSalary || filters.postedWithin) && (
         <button type="button" onClick={clearAll} className="text-sm font-medium text-primary-600 hover:underline">Clear all filters</button>
       )}
     </aside>
@@ -282,7 +289,28 @@ export default function Jobs() {
 
         <div className={splitView ? 'min-w-0' : ''}>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-slate-500">{splitView ? 'Select a job' : 'Sort by'}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-slate-500">Posted:</span>
+              {POSTED_WITHIN.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => updateFilters({ postedWithin: filters.postedWithin === value ? '' : value, page: 0 })}
+                  className={`rounded-full px-3 py-1 text-sm font-medium transition ${
+                    filters.postedWithin === value
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+              {filters.postedWithin && (
+                <button type="button" onClick={() => updateFilters({ postedWithin: '', page: 0 })} className="text-xs text-slate-500 hover:text-primary-600">
+                  Show all
+                </button>
+              )}
+            </div>
             <select className="input-field w-auto min-w-[180px]" value={filters.sort} onChange={(e) => updateFilters({ sort: e.target.value, page: 0 })}>
               <option value="recent">Most recent</option>
               <option value="salary_desc">Salary: high to low</option>

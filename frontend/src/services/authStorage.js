@@ -36,7 +36,8 @@ export const authStorage = {
   },
 
   setToken(token) {
-    write(primary, 'token', token) || write(fallback, 'token', token);
+    write(fallback, 'token', token);
+    write(primary, 'token', token);
   },
 
   getUser() {
@@ -46,7 +47,8 @@ export const authStorage = {
 
   setUser(user) {
     const json = JSON.stringify(user);
-    write(primary, 'user', json) || write(fallback, 'user', json);
+    write(fallback, 'user', json);
+    write(primary, 'user', json);
   },
 
   clear() {
@@ -64,7 +66,7 @@ export const authStorage = {
   },
 };
 
-// One-time migration from old unprefixed keys
+// One-time migration from old unprefixed keys + sync session auth for new tabs
 export function migrateFromLocalStorage() {
   const legacyToken = localStorage.getItem('token');
   const legacyUser = localStorage.getItem('user');
@@ -75,5 +77,13 @@ export function migrateFromLocalStorage() {
   try {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+  } catch { /* ignore */ }
+
+  // New tabs cannot read sessionStorage — mirror active session into localStorage
+  try {
+    const sessionToken = primary.getItem(PREFIX + 'token');
+    const sessionUser = primary.getItem(PREFIX + 'user');
+    if (sessionToken) fallback.setItem(PREFIX + 'token', sessionToken);
+    if (sessionUser) fallback.setItem(PREFIX + 'user', sessionUser);
   } catch { /* ignore */ }
 }

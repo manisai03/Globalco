@@ -2,9 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { Link, useSearchParams } from 'react-router-dom';
 
-import { Eye, FileText, Bookmark, Bell, Calendar, MapPin, Trash2 } from 'lucide-react';
-
-import ApplicationDetailModal from '../components/ApplicationDetailModal';
+import { FileText, Bookmark, Bell, Calendar, MapPin, Trash2 } from 'lucide-react';
 
 import ChatPanel from '../components/ChatPanel';
 
@@ -42,13 +40,55 @@ const DASHBOARD_TABS = [
 
   { key: 'applications', label: 'Applications', icon: FileText },
 
-  { key: 'interviews', label: 'Interviews', icon: Calendar },
+  { key: 'interviews', label: 'Application Status', icon: Calendar },
 
   { key: 'saved', label: 'Saved Jobs', icon: Bookmark },
 
   { key: 'alerts', label: 'Job Alerts', icon: Bell },
 
 ];
+
+
+
+const APPLICATION_DATE_FILTERS = [
+  { key: 'today', label: 'Today' },
+  { key: '3days', label: 'Last 3 days' },
+  { key: 'week', label: 'Past week' },
+];
+
+const INTERVIEW_STATUS_FILTERS = [
+  { key: 'ALL', label: 'All' },
+  { key: 'SHORTLISTED', label: 'Shortlisted' },
+  { key: 'REJECTED', label: 'Rejected' },
+  { key: 'HIRED', label: 'Hired' },
+  { key: 'INTERVIEW_SCHEDULED', label: 'Interview Scheduled' },
+];
+
+function startOfDay(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function filterByAppliedDate(list, dateKey) {
+  if (!dateKey) return list;
+  const today = startOfDay(new Date());
+  let cutoff = today;
+  if (dateKey === '3days') cutoff = new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000);
+  if (dateKey === 'week') cutoff = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000);
+  return list.filter((app) => startOfDay(app.createdAt) >= cutoff);
+}
+
+function filterByStatus(list, statusKey) {
+  if (statusKey === 'ALL') {
+    return list.filter((app) => ['SHORTLISTED', 'REJECTED', 'HIRED', 'INTERVIEW_SCHEDULED'].includes(app.status));
+  }
+  return list.filter((app) => app.status === statusKey);
+}
+
+function interviewForApplication(interviews, applicationId) {
+  return interviews.find((iv) => iv.applicationId === applicationId);
+}
 
 
 
@@ -76,7 +116,13 @@ export default function CandidateDashboard() {
 
   const [loading, setLoading] = useState(true);
 
-  const [selectedAppId, setSelectedAppId] = useState(null);
+  const [appDateFilter, setAppDateFilter] = useState(null);
+
+  const [interviewStatusFilter, setInterviewStatusFilter] = useState('ALL');
+
+  const filteredApplications = filterByAppliedDate(applications, appDateFilter);
+
+  const filteredInterviewApplications = filterByStatus(applications, interviewStatusFilter);
 
 
 
@@ -202,13 +248,13 @@ export default function CandidateDashboard() {
 
     profile: 'Manage your profile, education, and experience',
 
-    interviews: 'Upcoming and scheduled interviews',
+    interviews: 'Track shortlisted, rejected, hired, and interview updates',
 
     alerts: 'Saved searches — run them anytime from here',
 
     saved: 'Jobs you bookmarked for later',
 
-    applications: 'Track your applications and saved jobs',
+    applications: 'Filter applications by when you applied',
 
   }[tab] || 'Track your applications and saved jobs';
 
@@ -256,7 +302,7 @@ export default function CandidateDashboard() {
 
               {key === 'saved' && <span className="opacity-75">({savedJobs.length})</span>}
 
-              {key === 'interviews' && <span className="opacity-75">({interviews.length})</span>}
+              {key === 'interviews' && <span className="opacity-75">({filteredInterviewApplications.length})</span>}
 
               {key === 'alerts' && <span className="opacity-75">({savedSearches.length})</span>}
 
@@ -294,6 +340,52 @@ export default function CandidateDashboard() {
 
         <div className="mt-8">
 
+          <div className="mb-4 flex flex-wrap gap-2">
+
+            {APPLICATION_DATE_FILTERS.map(({ key, label }) => (
+
+              <button
+
+                key={key}
+
+                type="button"
+
+                onClick={() => setAppDateFilter((current) => (current === key ? null : key))}
+
+                className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+
+                  appDateFilter === key
+
+                    ? 'bg-primary-600 text-white shadow-sm'
+
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+
+                }`}
+
+              >
+
+                {label}
+
+                <span className="ml-1 opacity-75">({filterByAppliedDate(applications, key).length})</span>
+
+              </button>
+
+            ))}
+
+            {appDateFilter && (
+
+              <button type="button" onClick={() => setAppDateFilter(null)} className="text-sm text-slate-500 hover:text-primary-600">
+
+                Show all
+
+              </button>
+
+            )}
+
+          </div>
+
+
+
           {applications.length === 0 ? (
 
             <p className="rounded-xl border border-dashed border-slate-300 p-12 text-center text-slate-500">
@@ -302,11 +394,19 @@ export default function CandidateDashboard() {
 
             </p>
 
+          ) : filteredApplications.length === 0 ? (
+
+            <p className="rounded-xl border border-dashed border-slate-300 p-12 text-center text-slate-500">
+
+              No applications {APPLICATION_DATE_FILTERS.find((f) => f.key === appDateFilter)?.label?.toLowerCase() || 'in this period'}.
+
+            </p>
+
           ) : (
 
             <div className="space-y-4">
 
-              {applications.map((app) => (
+              {filteredApplications.map((app) => (
 
                 <div key={app.id} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
 
@@ -323,12 +423,6 @@ export default function CandidateDashboard() {
                   </div>
 
                   <div className="flex items-center gap-3">
-
-                    <button onClick={() => setSelectedAppId(app.id)} className="inline-flex items-center gap-1 text-sm text-primary-600 hover:underline">
-
-                      <Eye className="h-4 w-4" /> View
-
-                    </button>
 
                     <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusColors[app.status] || statusColors.PENDING}`}>
 
@@ -386,57 +480,113 @@ export default function CandidateDashboard() {
 
         <div className="mt-8 space-y-4">
 
-          {interviews.length === 0 ? (
+          <div className="flex flex-wrap gap-2">
+
+            {INTERVIEW_STATUS_FILTERS.map(({ key, label }) => (
+
+              <button
+
+                key={key}
+
+                type="button"
+
+                onClick={() => setInterviewStatusFilter(key)}
+
+                className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+
+                  interviewStatusFilter === key
+
+                    ? 'bg-primary-600 text-white shadow-sm'
+
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+
+                }`}
+
+              >
+
+                {label}
+
+                {key !== 'ALL' && (
+
+                  <span className="ml-1 opacity-75">({applications.filter((a) => a.status === key).length})</span>
+
+                )}
+
+              </button>
+
+            ))}
+
+          </div>
+
+
+
+          {filteredInterviewApplications.length === 0 ? (
 
             <p className="rounded-xl border border-dashed border-slate-300 p-12 text-center text-slate-500">
 
-              No interviews scheduled yet. Keep applying — recruiters will schedule here.
+              {interviewStatusFilter === 'ALL'
+
+                ? 'No updates from recruiters yet. Keep applying — shortlisted, interview, and hiring updates will appear here.'
+
+                : `No applications with status "${INTERVIEW_STATUS_FILTERS.find((f) => f.key === interviewStatusFilter)?.label}".`}
 
             </p>
 
           ) : (
 
-            interviews.map((iv) => (
+            filteredInterviewApplications.map((app) => {
 
-              <div key={iv.id} className="card flex flex-wrap items-start justify-between gap-4 p-5">
+              const iv = interviewForApplication(interviews, app.id);
 
-                <div>
+              return (
 
-                  <Link to={`/jobs/${iv.jobId}`} className="font-semibold hover:text-primary-600">{iv.jobTitle}</Link>
+                <div key={app.id} className="flex flex-wrap items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
 
-                  <p className="text-sm text-slate-500">{iv.company}</p>
+                  <div>
 
-                  <p className="mt-2 flex items-center gap-1 text-sm">
+                    <Link to={`/jobs/${app.jobId}`} className="font-semibold hover:text-primary-600">{app.jobTitle}</Link>
 
-                    <Calendar className="h-4 w-4 text-primary-600" />
+                    <p className="text-sm text-slate-500">{app.company}</p>
 
-                    {new Date(iv.scheduledAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                    {iv && (
 
-                  </p>
+                      <p className="mt-2 flex items-center gap-1 text-sm">
 
-                  {iv.location && (
+                        <Calendar className="h-4 w-4 text-primary-600" />
 
-                    <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
+                        {new Date(iv.scheduledAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
 
-                      <MapPin className="h-4 w-4" />{iv.location}
+                      </p>
 
-                    </p>
+                    )}
 
-                  )}
+                    {iv?.location && (
 
-                  {iv.notes && <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{iv.notes}</p>}
+                      <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
+
+                        <MapPin className="h-4 w-4" />{iv.location}
+
+                      </p>
+
+                    )}
+
+                    {iv?.notes && <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{iv.notes}</p>}
+
+                    <p className="mt-1 text-xs text-slate-400">Applied {new Date(app.createdAt).toLocaleDateString()}</p>
+
+                  </div>
+
+                  <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusColors[app.status] || statusColors.PENDING}`}>
+
+                    {app.status.replace('_', ' ')}
+
+                  </span>
 
                 </div>
 
-                <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusColors.INTERVIEW_SCHEDULED}`}>
+              );
 
-                  {iv.status}
-
-                </span>
-
-              </div>
-
-            ))
+            })
 
           )}
 
@@ -511,24 +661,6 @@ export default function CandidateDashboard() {
           <ProfilePanel />
 
         </div>
-
-      )}
-
-
-
-      {selectedAppId && (
-
-        <ApplicationDetailModal
-
-          applicationId={selectedAppId}
-
-          onClose={() => setSelectedAppId(null)}
-
-          onStatusUpdate={() => {}}
-
-          adminMode={false}
-
-        />
 
       )}
 

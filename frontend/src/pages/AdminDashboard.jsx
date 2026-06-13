@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ApplicationDetailModal from '../components/ApplicationDetailModal';
 import ApplicantStatusChart from '../components/ApplicantStatusChart';
-import ResumeViewer from '../components/ResumeViewer';
+import { ResumePreviewModal } from '../components/ResumeViewer';
 import ChatPanel from '../components/ChatPanel';
 import ProfilePanel from '../components/ProfilePanel';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -651,22 +651,12 @@ export default function AdminDashboard() {
       )}
 
       {previewResumeApp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setPreviewResumeApp(null)}>
-          <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold">Resume — {previewResumeApp.userName}</h3>
-                <p className="text-sm text-slate-500">Applied for {previewResumeApp.jobTitle}</p>
-              </div>
-              <button onClick={() => setPreviewResumeApp(null)} className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="mt-4">
-              <ResumeViewer resumePath={previewResumeApp.resumeUrl} />
-            </div>
-          </div>
-        </div>
+        <ResumePreviewModal
+          resumePath={previewResumeApp.resumeUrl}
+          title={`Resume — ${previewResumeApp.userName}`}
+          subtitle={`Applied for ${previewResumeApp.jobTitle}`}
+          onClose={() => setPreviewResumeApp(null)}
+        />
       )}
     </div>
   );

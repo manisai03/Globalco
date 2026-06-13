@@ -67,7 +67,7 @@ public class SavedSearchService {
     private SavedSearchResponse toResponse(SavedSearch ss) {
         long matchCount = jobRepository.count(JobSpecification.withFilters(
                 ss.getSearch(), ss.getLocation(), ss.getJobType(), ss.getExperienceLevel(),
-                ss.getCategory(), ss.getMinSalary(), null, "OPEN"));
+                ss.getCategory(), ss.getMinSalary(), null, "OPEN", null));
 
         return SavedSearchResponse.builder()
                 .id(ss.getId())

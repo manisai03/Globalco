@@ -16,6 +16,7 @@ import CandidateDashboard from './pages/CandidateDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import Chat from './pages/Chat';
 import Notifications from './pages/Notifications';
+import ResumeViewerPage from './pages/ResumeViewerPage';
 import NotFound from './pages/NotFound';
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="/dashboard" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
               <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+              <Route path="/resume-viewer" element={<ResumeViewerPage />} />
               <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>

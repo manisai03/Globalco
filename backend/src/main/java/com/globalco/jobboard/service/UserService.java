@@ -96,6 +96,9 @@ public class UserService {
         if (!passwordEncoder.matches(request.getCurrentPassword(), account.getPassword())) {
             throw new BadRequestException("Current password is incorrect");
         }
+        if (passwordEncoder.matches(request.getNewPassword(), account.getPassword())) {
+            throw new BadRequestException("New password must be different from your current password");
+        }
         String encoded = passwordEncoder.encode(request.getNewPassword());
         if (account instanceof Admin admin) {
             admin.setPassword(encoded);

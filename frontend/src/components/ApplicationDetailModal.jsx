@@ -242,7 +242,7 @@ export default function ApplicationDetailModal({ applicationId, onClose, onStatu
 
                 <div className="mt-3">
 
-                  <ResumeViewer resumePath={resumePath} />
+                  <ResumeViewer resumePath={resumePath} showInlinePreview={false} />
 
                 </div>
 

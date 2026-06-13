@@ -16,6 +16,7 @@ import {
 
 import YearMonthPicker from './YearMonthPicker';
 import ProfileAvatar from './ProfileAvatar';
+import PasswordInput from './ui/PasswordInput';
 
 import {
 
@@ -231,7 +232,13 @@ export default function NaukriStyleProfile() {
 
     setInternships(ints);
 
-    const emps = parseJsonField(data.employmentProfile, []);
+    const emps = parseJsonField(data.employmentProfile, []).map((item) => ({
+
+      ...item,
+
+      isCurrent: item.isCurrent ?? !item.endYear,
+
+    }));
 
     setEmployment(emps);
 
@@ -757,7 +764,7 @@ export default function NaukriStyleProfile() {
 
                       ? `${item.experienceYears || 0} yr ${item.experienceMonths || 0} mo`
 
-                      : formatMonthYear(item.startMonth, item.startYear) + (item.endYear ? ` – ${formatMonthYear(item.endMonth, item.endYear)}` : '')}
+                      : formatMonthYear(item.startMonth, item.startYear) + (item.isCurrent || !item.endYear ? ' – Present' : ` – ${formatMonthYear(item.endMonth, item.endYear)}`)}
 
                   </p>
 
@@ -833,6 +840,14 @@ export default function NaukriStyleProfile() {
 
               e.preventDefault();
 
+              if (passwords.newPassword === passwords.currentPassword) {
+
+                toast.error('New password must be different from your current password');
+
+                return;
+
+              }
+
               try {
 
                 await api.put('/api/users/me/password', passwords);
@@ -849,9 +864,9 @@ export default function NaukriStyleProfile() {
 
             }} className="mt-4 space-y-3">
 
-              <input type="password" placeholder="Current password" value={passwords.currentPassword} onChange={(e) => setPasswords({ ...passwords, currentPassword: e.target.value })} className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" required />
+              <PasswordInput placeholder="Current password" value={passwords.currentPassword} onChange={(e) => setPasswords({ ...passwords, currentPassword: e.target.value })} autoComplete="current-password" required />
 
-              <input type="password" placeholder="New password" value={passwords.newPassword} onChange={(e) => setPasswords({ ...passwords, newPassword: e.target.value })} className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" required />
+              <PasswordInput placeholder="New password" value={passwords.newPassword} onChange={(e) => setPasswords({ ...passwords, newPassword: e.target.value })} autoComplete="new-password" required />
 
               <button type="submit" className="rounded-lg bg-slate-800 px-5 py-2 text-sm font-medium text-white dark:bg-slate-700">Update Password</button>
 
@@ -1055,9 +1070,53 @@ export default function NaukriStyleProfile() {
 
                 <span className="text-slate-400">to</span>
 
-                <YearMonthPicker label="End" month={draft.endMonth} year={draft.endYear} onMonthChange={(v) => setDraft({ ...draft, endMonth: v })} onYearChange={(v) => setDraft({ ...draft, endYear: v })} />
+                {draft.isCurrent ? (
+
+                  <span className="rounded-lg border border-primary-200 bg-primary-50 px-4 py-2 text-sm font-medium text-primary-700 dark:border-primary-800 dark:bg-primary-950/30 dark:text-primary-400">Present</span>
+
+                ) : (
+
+                  <YearMonthPicker label="End" month={draft.endMonth} year={draft.endYear} onMonthChange={(v) => setDraft({ ...draft, endMonth: v })} onYearChange={(v) => setDraft({ ...draft, endYear: v })} />
+
+                )}
 
               </div>
+
+              <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+
+                <input
+
+                  type="checkbox"
+
+                  checked={!!draft.isCurrent}
+
+                  onChange={(e) => {
+
+                    const isCurrent = e.target.checked;
+
+                    const now = new Date();
+
+                    setDraft({
+
+                      ...draft,
+
+                      isCurrent,
+
+                      endMonth: isCurrent ? String(now.getMonth() + 1) : '',
+
+                      endYear: isCurrent ? String(now.getFullYear()) : '',
+
+                    });
+
+                  }}
+
+                  className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+
+                />
+
+                I currently work here
+
+              </label>
 
             </div>
 
@@ -1087,7 +1146,7 @@ function RecruiterProfile({ profile, setProfile, saveAll, passwords, setPassword
 
   const fields = [
 
-    ['fullName', 'Full Name'], ['phone', 'Phone'], ['location', 'Location'],
+    ['fullName', 'Full Name'], ['email', 'Email'], ['phone', 'Phone'], ['location', 'Location'],
 
     ['recruiterTitle', 'Your Role / Title'], ['companyName', 'Company Name'],
 
@@ -1111,11 +1170,21 @@ function RecruiterProfile({ profile, setProfile, saveAll, passwords, setPassword
             variant="admin"
           />
 
-          <div>
+          <div className="min-w-0 flex-1">
 
             <h1 className="text-2xl font-bold">{profile.fullName}</h1>
 
             <p className="text-slate-500">{profile.recruiterTitle} · {profile.companyName}</p>
+
+            <div className="mt-4 flex flex-wrap gap-4 text-sm text-slate-500">
+
+              {profile.location && <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{profile.location}</span>}
+
+              {profile.phone && <span className="flex items-center gap-1"><Phone className="h-4 w-4" />{profile.phone}</span>}
+
+              {profile.email && <span className="flex items-center gap-1"><Mail className="h-4 w-4" />{profile.email}</span>}
+
+            </div>
 
           </div>
 
@@ -1133,7 +1202,12 @@ function RecruiterProfile({ profile, setProfile, saveAll, passwords, setPassword
 
               <label className="text-xs font-medium text-slate-500">{label}</label>
 
-              <input value={profile[key] || ''} onChange={(e) => setProfile({ ...profile, [key]: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+              <input
+                value={profile[key] || ''}
+                onChange={(e) => setProfile({ ...profile, [key]: e.target.value })}
+                disabled={key === 'email'}
+                className="mt-1 w-full rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900"
+              />
 
             </div>
 
@@ -1161,6 +1235,14 @@ function RecruiterProfile({ profile, setProfile, saveAll, passwords, setPassword
 
           e.preventDefault();
 
+          if (passwords.newPassword === passwords.currentPassword) {
+
+            toast.error('New password must be different from your current password');
+
+            return;
+
+          }
+
           try {
 
             await api.put('/api/users/me/password', passwords);
@@ -1177,9 +1259,9 @@ function RecruiterProfile({ profile, setProfile, saveAll, passwords, setPassword
 
         }} className="mt-4 space-y-3">
 
-          <input type="password" placeholder="Current password" value={passwords.currentPassword} onChange={(e) => setPasswords({ ...passwords, currentPassword: e.target.value })} className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" required />
+          <PasswordInput placeholder="Current password" value={passwords.currentPassword} onChange={(e) => setPasswords({ ...passwords, currentPassword: e.target.value })} autoComplete="current-password" required />
 
-          <input type="password" placeholder="New password" value={passwords.newPassword} onChange={(e) => setPasswords({ ...passwords, newPassword: e.target.value })} className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" required />
+          <PasswordInput placeholder="New password" value={passwords.newPassword} onChange={(e) => setPasswords({ ...passwords, newPassword: e.target.value })} autoComplete="new-password" required />
 
           <button type="submit" className="rounded-lg bg-slate-800 px-5 py-2 text-sm font-medium text-white dark:bg-slate-700">Update Password</button>
 

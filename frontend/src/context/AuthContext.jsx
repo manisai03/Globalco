@@ -16,7 +16,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const token = authStorage.getToken();
-    if (token && user) {
+    if (token) {
       api.get('/api/users/me')
         .then((res) => {
           const data = unwrap(res);

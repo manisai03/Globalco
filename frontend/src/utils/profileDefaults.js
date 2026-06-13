@@ -34,6 +34,7 @@ export const emptyEmployment = () => ({
   startYear: '',
   endMonth: '',
   endYear: '',
+  isCurrent: false,
   description: '',
 });
 

@@ -32,12 +32,13 @@ public class JobController {
             @RequestParam(required = false) BigDecimal minSalary,
             @RequestParam(required = false) BigDecimal maxSalary,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String postedWithin,
             @RequestParam(required = false, defaultValue = "recent") String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "12") int size) {
         return ApiResponse.ok(jobService.searchJobs(
                 search, location, jobType, experienceLevel,
-                category, minSalary, maxSalary, status, sort, page, size, securityUtils.getCurrentUserOrNull()));
+                category, minSalary, maxSalary, status, postedWithin, sort, page, size, securityUtils.getCurrentUserOrNull()));
     }
 
     @GetMapping("/featured")

@@ -38,12 +38,12 @@ public class JobService {
     public PageResponse<JobResponse> searchJobs(
             String search, String location, String jobType, String experienceLevel,
             String category, BigDecimal minSalary, BigDecimal maxSalary, String status,
-            String sort, int page, int size, User currentUser) {
+            String postedWithin, String sort, int page, int size, User currentUser) {
 
         Sort sorting = resolveSort(sort);
         Page<Job> jobs = jobRepository.findAll(
                 JobSpecification.withFilters(search, location, jobType, experienceLevel,
-                        category, minSalary, maxSalary, status != null ? status : "OPEN"),
+                        category, minSalary, maxSalary, status != null ? status : "OPEN", postedWithin),
                 PageRequest.of(page, size, sorting));
 
         List<JobResponse> content = jobs.getContent().stream()

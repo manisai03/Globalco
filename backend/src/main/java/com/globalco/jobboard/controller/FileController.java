@@ -26,12 +26,23 @@ public class FileController {
             if (!resource.exists()) {
                 return ResponseEntity.notFound().build();
             }
+            MediaType contentType = resolveContentType(filename);
             return ResponseEntity.ok()
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .contentType(contentType)
                     .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
                     .body(resource);
         } catch (Exception e) {
             return ResponseEntity.notFound().build();
         }
+    }
+
+    private static MediaType resolveContentType(String filename) {
+        String lower = filename.toLowerCase();
+        if (lower.endsWith(".pdf")) return MediaType.APPLICATION_PDF;
+        if (lower.endsWith(".png")) return MediaType.IMAGE_PNG;
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return MediaType.IMAGE_JPEG;
+        if (lower.endsWith(".doc")) return MediaType.parseMediaType("application/msword");
+        if (lower.endsWith(".docx")) return MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        return MediaType.APPLICATION_OCTET_STREAM;
     }
 }
