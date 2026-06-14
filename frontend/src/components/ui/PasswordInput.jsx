@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
-export default function PasswordInput({ value, onChange, placeholder, className = '', required, id, autoComplete }) {
+export default function PasswordInput({ value, onChange, placeholder, className = '', wrapperClassName = '', required, id, autoComplete }) {
   const [visible, setVisible] = useState(false);
 
   return (
-    <div className="relative">
+    <div className={`relative ${wrapperClassName}`}>
       <input
         id={id}
         type={visible ? 'text' : 'password'}

@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, SlidersHorizontal, X, Bell } from 'lucide-react';
 import api, { unwrap } from '../services/api';
 import JobCard from '../components/JobCard';
-import JobListItem from '../components/JobListItem';
-import JobPreviewPanel from '../components/JobPreviewPanel';
 import JobCardSkeleton from '../components/ui/JobCardSkeleton';
 import Pagination from '../components/ui/Pagination';
 import EmptyState from '../components/ui/EmptyState';
@@ -32,7 +30,6 @@ function readFilters(params) {
     postedWithin: params.get('postedWithin') || '',
     sort: params.get('sort') || 'recent',
     page: Number(params.get('page') || 0),
-    job: params.get('job') || '',
   };
 }
 
@@ -48,6 +45,7 @@ function filtersToParams(filters) {
 
 export default function Jobs() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -55,56 +53,40 @@ export default function Jobs() {
   const [totalPages, setTotalPages] = useState(0);
   const [searchDraft, setSearchDraft] = useState(searchParams.get('search') || '');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const [splitView, setSplitView] = useState(false);
 
   const filters = readFilters(searchParams);
-  const selectedJobId = filters.job ? Number(filters.job) : null;
 
   useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1280px)');
-    const update = () => setSplitView(mq.matches);
-    update();
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
+    const legacyJobId = searchParams.get('job');
+    if (legacyJobId) {
+      const q = filtersToParams(readFilters(searchParams));
+      q.delete('job');
+      navigate(`/jobs/${legacyJobId}${q.toString() ? `?${q}` : ''}`, { replace: true });
+    }
+  }, [searchParams, navigate]);
 
   const updateFilters = useCallback((patch) => {
     const next = { ...readFilters(searchParams), ...patch };
-    if (!patch.job && (patch.search !== undefined || patch.location !== undefined || patch.page !== undefined)) {
-      next.job = '';
-    }
     setSearchParams(filtersToParams(next));
   }, [searchParams, setSearchParams]);
-
-  const selectJob = (jobId) => updateFilters({ job: String(jobId) });
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
     try {
       const f = readFilters(searchParams);
       const query = filtersToParams({ ...f, size: PAGE_SIZE });
-      query.delete('job');
       query.set('size', String(PAGE_SIZE));
       const res = await api.get(`/api/jobs?${query}`);
       const data = unwrap(res);
       setJobs(data.content);
       setTotal(data.totalElements);
       setTotalPages(data.totalPages);
-
-      if (splitView && data.content.length > 0) {
-        const current = searchParams.get('job');
-        const stillVisible = current && data.content.some((j) => String(j.id) === current);
-        if (!stillVisible) {
-          const next = { ...readFilters(searchParams), job: String(data.content[0].id) };
-          setSearchParams(filtersToParams(next), { replace: true });
-        }
-      }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to load jobs');
     } finally {
       setLoading(false);
     }
-  }, [searchParams, splitView, setSearchParams]);
+  }, [searchParams]);
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
@@ -218,42 +200,6 @@ export default function Jobs() {
     </aside>
   );
 
-  const ResultsList = () => {
-    if (loading) {
-      return splitView ? (
-        <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <JobCardSkeleton key={i} />)}</div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">{Array.from({ length: 6 }).map((_, i) => <JobCardSkeleton key={i} />)}</div>
-      );
-    }
-    if (jobs.length === 0) {
-      return <EmptyState title="No jobs match your search" description="Try broadening your filters or search for different keywords." actionLabel="Clear filters" onAction={clearAll} />;
-    }
-    if (splitView) {
-      return (
-        <div className="space-y-3">
-          {jobs.map((job) => (
-            <JobListItem
-              key={job.id}
-              job={job}
-              selected={selectedJobId === job.id}
-              onSelect={selectJob}
-              onSave={user ? saveJob : null}
-              onUnsave={user ? unsaveJob : null}
-            />
-          ))}
-        </div>
-      );
-    }
-    return (
-      <div className="grid gap-4 sm:grid-cols-2">
-        {jobs.map((job) => (
-          <JobCard key={job.id} job={job} onSave={user ? saveJob : null} onUnsave={user ? unsaveJob : null} />
-        ))}
-      </div>
-    );
-  };
-
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -284,10 +230,10 @@ export default function Jobs() {
         </div>
       )}
 
-      <div className={`mt-8 grid gap-8 ${splitView ? 'xl:grid-cols-[220px_minmax(320px,380px)_1fr]' : 'lg:grid-cols-[240px_1fr]'}`}>
+      <div className="mt-8 grid gap-8 lg:grid-cols-[240px_1fr]">
         <FilterPanel className={`card p-5 ${showMobileFilters ? 'block' : 'hidden lg:block'}`} />
 
-        <div className={splitView ? 'min-w-0' : ''}>
+        <div>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm text-slate-500">Posted:</span>
@@ -318,19 +264,25 @@ export default function Jobs() {
               <option value="title">Title A–Z</option>
             </select>
           </div>
-          <ResultsList />
+
+          {loading ? (
+            <div className="grid gap-4 sm:grid-cols-2">{Array.from({ length: 6 }).map((_, i) => <JobCardSkeleton key={i} />)}</div>
+          ) : jobs.length === 0 ? (
+            <EmptyState title="No jobs match your search" description="Try broadening your filters or search for different keywords." actionLabel="Clear filters" onAction={clearAll} />
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {jobs.map((job) => (
+                <JobCard key={job.id} job={job} onSave={user ? saveJob : null} onUnsave={user ? unsaveJob : null} />
+              ))}
+            </div>
+          )}
+
           {!loading && jobs.length > 0 && (
             <div className="mt-8">
               <Pagination page={filters.page} totalPages={totalPages} onPageChange={(p) => updateFilters({ page: p })} />
             </div>
           )}
         </div>
-
-        {splitView && (
-          <div className="hidden xl:block">
-            <JobPreviewPanel jobId={selectedJobId} onApplied={fetchJobs} />
-          </div>
-        )}
       </div>
     </div>
   );

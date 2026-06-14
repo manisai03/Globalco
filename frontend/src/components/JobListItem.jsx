@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { MapPin, Bookmark, BookmarkCheck } from 'lucide-react';
 import { daysAgo } from '../utils/formatters';
 
-export default function JobListItem({ job, selected, onSelect, onSave, onUnsave }) {
+export default function JobListItem({ job, onSave, onUnsave }) {
   const formatSalary = () => {
     if (!job.salaryMin && !job.salaryMax) return 'Competitive';
     const fmt = (n) => `₹${(n / 100000).toFixed(1)}L`;
@@ -11,16 +11,9 @@ export default function JobListItem({ job, selected, onSelect, onSave, onUnsave 
   };
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onSelect?.(job.id)}
-      onKeyDown={(e) => e.key === 'Enter' && onSelect?.(job.id)}
-      className={`cursor-pointer rounded-xl border p-4 text-left transition ${
-        selected
-          ? 'border-primary-500 bg-primary-50/60 ring-1 ring-primary-500 dark:bg-primary-950/30'
-          : 'border-slate-200 bg-white hover:border-primary-300 dark:border-slate-800 dark:bg-slate-900'
-      }`}
+    <Link
+      to={`/jobs/${job.id}`}
+      className="block rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-primary-300 hover:shadow-sm dark:border-slate-800 dark:bg-slate-900"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -30,7 +23,7 @@ export default function JobListItem({ job, selected, onSelect, onSave, onUnsave 
         {onSave && (
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); job.saved ? onUnsave(job.id) : onSave(job.id); }}
+            onClick={(e) => { e.preventDefault(); job.saved ? onUnsave(job.id) : onSave(job.id); }}
             className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:text-primary-600"
             aria-label={job.saved ? 'Unsave' : 'Save'}
           >
@@ -48,13 +41,6 @@ export default function JobListItem({ job, selected, onSelect, onSave, onUnsave 
           {job.matchPreview.overallScore}% match
         </span>
       )}
-      <Link
-        to={`/jobs/${job.id}`}
-        onClick={(e) => e.stopPropagation()}
-        className="mt-2 inline-block text-xs font-medium text-primary-600 hover:underline lg:hidden"
-      >
-        View details →
-      </Link>
-    </div>
+    </Link>
   );
 }

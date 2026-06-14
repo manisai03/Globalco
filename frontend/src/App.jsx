@@ -16,6 +16,10 @@ import CandidateDashboard from './pages/CandidateDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import Chat from './pages/Chat';
 import Notifications from './pages/Notifications';
+import NotificationDetailPage from './pages/NotificationDetailPage';
+import AdminJobFormPage from './pages/AdminJobFormPage';
+import AdminApplicantPage from './pages/AdminApplicantPage';
+import ApplicationDetailPage from './pages/ApplicationDetailPage';
 import ResumeViewerPage from './pages/ResumeViewerPage';
 import NotFound from './pages/NotFound';
 
@@ -36,9 +40,14 @@ export default function App() {
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="/dashboard" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
+              <Route path="/admin/jobs/new" element={<ProtectedRoute adminOnly><AdminJobFormPage /></ProtectedRoute>} />
+              <Route path="/admin/jobs/:id/edit" element={<ProtectedRoute adminOnly><AdminJobFormPage /></ProtectedRoute>} />
+              <Route path="/admin/applicants/:id" element={<ProtectedRoute adminOnly><AdminApplicantPage /></ProtectedRoute>} />
+              <Route path="/applications/:id" element={<ProtectedRoute><ApplicationDetailPage /></ProtectedRoute>} />
               <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
               <Route path="/resume-viewer" element={<ResumeViewerPage />} />
               <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+              <Route path="/notifications/:id" element={<ProtectedRoute><NotificationDetailPage /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Layout>

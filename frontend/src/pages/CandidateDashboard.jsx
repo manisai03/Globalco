@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { Link, useSearchParams } from 'react-router-dom';
 
-import { FileText, Bookmark, Bell, Calendar, MapPin, Trash2 } from 'lucide-react';
+import { FileText, Bookmark, Bell, Calendar, MapPin, Trash2, Eye } from 'lucide-react';
 
 import ChatPanel from '../components/ChatPanel';
 
@@ -423,7 +423,12 @@ export default function CandidateDashboard() {
                   </div>
 
                   <div className="flex items-center gap-3">
-
+                    <Link
+                      to={`/applications/${app.id}`}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                    >
+                      <Eye className="h-4 w-4" /> View
+                    </Link>
                     <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusColors[app.status] || statusColors.PENDING}`}>
 
                       {app.status.replace('_', ' ')}
@@ -576,11 +581,19 @@ export default function CandidateDashboard() {
 
                   </div>
 
-                  <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusColors[app.status] || statusColors.PENDING}`}>
+                  <div className="flex items-center gap-3">
+                    <Link
+                      to={`/applications/${app.id}`}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                    >
+                      <Eye className="h-4 w-4" /> View
+                    </Link>
+                    <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusColors[app.status] || statusColors.PENDING}`}>
 
                     {app.status.replace('_', ' ')}
 
                   </span>
+                  </div>
 
                 </div>
 

@@ -1,49 +1,26 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api, { unwrap } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
-import ApplicationDetailModal from '../components/ApplicationDetailModal';
 import ApplicantStatusChart from '../components/ApplicantStatusChart';
-import { ResumePreviewModal } from '../components/ResumeViewer';
 import ChatPanel from '../components/ChatPanel';
 import ProfilePanel from '../components/ProfilePanel';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import toast from 'react-hot-toast';
 import {
-  Sparkles, Eye, Search, Plus, Pencil, Trash2, X, Briefcase,
-  MapPin, Building2, IndianRupee, LayoutDashboard, Users,
+  Sparkles, Eye, Search, Plus, Pencil, Trash2, Briefcase,
+  MapPin, Building2, IndianRupee, LayoutDashboard, Users, ExternalLink,
 } from 'lucide-react';
 import { daysAgo, formatSalary } from '../utils/formatters';
 import { isLegacyCompanyName, resolveRecruiterCompany } from '../utils/recruiterCompany';
+import {
+  buildAiDefaults,
+  scrubGlobalcoFromDescription,
+  EXPERIENCE_LEVELS,
+} from '../utils/jobFormDefaults';
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4'];
-
-function buildJobDefaults(user) {
-  return {
-    title: '',
-    company: resolveRecruiterCompany(user, ''),
-    description: '',
-    location: user?.location?.trim() || '',
-    salaryMin: '',
-    salaryMax: '',
-    experienceLevel: 'Mid-Level',
-    jobType: 'Full-time',
-    category: 'Engineering',
-    skills: '',
-    featured: false,
-  };
-}
-
-function buildAiDefaults(user) {
-  return {
-    jobTitle: '',
-    skills: '',
-    company: resolveRecruiterCompany(user, ''),
-    location: user?.location?.trim() || '',
-    experienceLevel: 'Mid-Level',
-  };
-}
 
 const statusColors = {
   PENDING: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
@@ -52,10 +29,6 @@ const statusColors = {
   INTERVIEW_SCHEDULED: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
   HIRED: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
 };
-
-const JOB_TYPES = ['Full-time', 'Part-time', 'Contract', 'Remote', 'Internship'];
-const CATEGORIES = ['Engineering', 'Design', 'Marketing', 'Sales', 'Finance', 'HR', 'Operations', 'Data Science'];
-const EXPERIENCE_LEVELS = ['Entry', 'Mid-Level', 'Senior', 'Lead'];
 
 const DASHBOARD_TABS = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -66,28 +39,18 @@ const DASHBOARD_TABS = [
 
 const NAV_ONLY_TABS = ['messages', 'profile'];
 
-function scrubGlobalcoFromDescription(description, company) {
-  if (!description || !company) return description;
-  return description
-    .replace(/Globalco Technologies/gi, company)
-    .replace(/\bGlobalco\b/gi, company);
-}
-
 export default function AdminDashboard() {
   const { user, refreshUser } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [dashboard, setDashboard] = useState(null);
   const [applicants, setApplicants] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [tab, setTab] = useState(searchParams.get('tab') || 'overview');
-  const [jobForm, setJobForm] = useState(() => buildJobDefaults(user));
-  const [editingId, setEditingId] = useState(null);
   const [aiForm, setAiForm] = useState(() => buildAiDefaults(user));
   const [loading, setLoading] = useState(true);
-  const [selectedAppId, setSelectedAppId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [jobFilter, setJobFilter] = useState('');
-  const [previewResumeApp, setPreviewResumeApp] = useState(null);
 
   const load = async () => {
     const [dash, apps, jobList] = await Promise.all([
@@ -106,12 +69,11 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!user || editingId) return;
-    const company = resolveRecruiterCompany(user, jobForm.company);
-    const location = user.location?.trim() || jobForm.location || '';
-    setJobForm((prev) => ({ ...prev, company, location }));
+    if (!user) return;
+    const company = resolveRecruiterCompany(user, aiForm.company);
+    const location = user.location?.trim() || aiForm.location || '';
     setAiForm((prev) => ({ ...prev, company, location: location || prev.location }));
-  }, [user?.companyName, user?.location, editingId]);
+  }, [user?.companyName, user?.location]);
 
   const switchTab = (key, extra = {}) => {
     setTab(key);
@@ -124,65 +86,16 @@ export default function AdminDashboard() {
     setTab(t);
   }, [searchParams]);
 
-  const startNewJob = useCallback(() => {
-    setEditingId(null);
-    setJobForm(buildJobDefaults(user));
-  }, [user]);
-
-  const saveJob = async (e) => {
-    e.preventDefault();
-    const company = resolveRecruiterCompany(user, jobForm.company);
-    if (!company) {
-      return toast.error('Set your company name to XPO (or your company) in Profile or the Company field');
-    }
-    const payload = {
-      ...jobForm,
-      company,
-      description: scrubGlobalcoFromDescription(jobForm.description, company),
-      salaryMin: jobForm.salaryMin ? Number(jobForm.salaryMin) : null,
-      salaryMax: jobForm.salaryMax ? Number(jobForm.salaryMax) : null,
-    };
-    try {
-      if (editingId) {
-        await api.put(`/api/jobs/${editingId}`, payload);
-        toast.success('Job updated successfully');
-      } else {
-        await api.post('/api/jobs', payload);
-        toast.success('New job posted successfully');
-      }
-      startNewJob();
-      load();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to save job');
-    }
-  };
-
-  const editJob = (job) => {
-    setEditingId(job.id);
-    const company = resolveRecruiterCompany(user, job.company) || job.company;
-    setJobForm({
-      title: job.title,
-      company,
-      description: scrubGlobalcoFromDescription(job.description, company),
-      location: job.location,
-      salaryMin: job.salaryMin || '', salaryMax: job.salaryMax || '', experienceLevel: job.experienceLevel || '',
-      jobType: job.jobType, category: job.category || '', skills: job.skills || '', featured: job.featured,
-    });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   const deleteJob = async (id) => {
     if (!confirm('Delete this job posting?')) return;
     await api.delete(`/api/jobs/${id}`);
     toast.success('Job deleted');
-    if (editingId === id) startNewJob();
     load();
   };
 
   const updateStatus = async (id, status) => {
     await api.patch(`/api/applications/${id}/status`, { status });
-    toast.success(`Status updated to ${status}`);
-    setSelectedAppId(null);
+    toast.success(`Status updated to ${status.replace('_', ' ')}`);
     load();
   };
 
@@ -192,23 +105,29 @@ export default function AdminDashboard() {
     }
     const company = resolveRecruiterCompany(user, aiForm.company);
     if (!company) {
-      return toast.error('Set Company Name to XPO in Profile (Admin → Profile), then try again');
+      return toast.error('Set Company Name in Profile (Admin → Profile), then try again');
     }
     try {
       const res = await api.post('/api/ai/generate-job-description', { ...aiForm, company });
       const description = unwrap(res).description;
-      setJobForm((f) => ({
-        ...f,
-        title: aiForm.jobTitle,
-        skills: aiForm.skills,
-        company,
-        location: aiForm.location || f.location,
-        experienceLevel: aiForm.experienceLevel || f.experienceLevel,
-        description: scrubGlobalcoFromDescription(description, company),
-      }));
-      setAiForm((f) => ({ ...f, company }));
-      switchTab('jobs');
-      toast.success('AI description generated with your company name!');
+      navigate('/admin/jobs/new', {
+        state: {
+          jobForm: {
+            title: aiForm.jobTitle,
+            skills: aiForm.skills,
+            company,
+            location: aiForm.location || user?.location?.trim() || '',
+            experienceLevel: aiForm.experienceLevel || 'Mid-Level',
+            description: scrubGlobalcoFromDescription(description, company),
+            jobType: 'Full-time',
+            category: 'Engineering',
+            salaryMin: '',
+            salaryMax: '',
+            featured: false,
+          },
+        },
+      });
+      toast.success('AI description generated — review and publish your job');
     } catch (err) {
       toast.error(err.response?.data?.message || 'AI generation failed');
     }
@@ -220,7 +139,6 @@ export default function AdminDashboard() {
     if (!company) {
       return toast.error('Update Company Name in your Profile (e.g. XPO)');
     }
-    setJobForm((f) => ({ ...f, company, location: fresh.location?.trim() || f.location }));
     setAiForm((f) => ({ ...f, company, location: fresh.location?.trim() || f.location }));
     toast.success(`Company set to ${company}`);
   };
@@ -240,8 +158,6 @@ export default function AdminDashboard() {
   if (loading) return <div className="flex justify-center py-20"><LoadingSpinner /></div>;
 
   const categoryData = Object.entries(dashboard.jobsByCategory || {}).map(([name, value]) => ({ name, value }));
-  const editingJob = jobs.find((j) => j.id === editingId);
-
   const pageTitle = tab === 'messages' ? 'Messages' : tab === 'profile' ? 'Profile' : 'Admin Dashboard';
 
   return (
@@ -254,245 +170,148 @@ export default function AdminDashboard() {
             <button
               key={key}
               onClick={() => switchTab(key)}
-              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition ${
-                tab === key
-                  ? 'bg-primary-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition ${
+                tab === key ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
               }`}
             >
-              <Icon className="h-4 w-4" />
-              {label}
-              {key === 'applicants' && <span className="opacity-75">({applicants.length})</span>}
-              {key === 'jobs' && <span className="opacity-75">({jobs.length})</span>}
+              <Icon className="h-4 w-4" /> {label}
             </button>
           ))}
         </div>
       )}
 
       {tab === 'overview' && (
-        <div className="mt-8 space-y-8">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { label: 'Total Jobs', value: dashboard.totalJobs },
-              { label: 'Open Jobs', value: dashboard.openJobs },
-              { label: 'Applications', value: dashboard.totalApplications },
-              { label: 'Unique Candidates', value: dashboard.totalUsers },
-            ].map((s) => (
-              <div key={s.label} className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                <p className="text-3xl font-bold">{s.value}</p>
-                <p className="text-sm text-slate-500">{s.label}</p>
-              </div>
-            ))}
-          </div>
-
-          <ApplicantStatusChart />
-
+        <div className="mt-8 grid gap-6 lg:grid-cols-2">
           <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-            <h3 className="font-semibold">Jobs by Category</h3>
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie data={categoryData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                  {categoryData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            <h2 className="font-semibold">Jobs Overview</h2>
+            <div className="mt-4 grid grid-cols-2 gap-4">
+              <div className="rounded-xl bg-primary-50 p-4 dark:bg-primary-900/20">
+                <p className="text-2xl font-bold text-primary-700 dark:text-primary-300">{dashboard.totalJobs}</p>
+                <p className="text-sm text-slate-500">Total Jobs</p>
+              </div>
+              <div className="rounded-xl bg-emerald-50 p-4 dark:bg-emerald-900/20">
+                <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{dashboard.openJobs}</p>
+                <p className="text-sm text-slate-500">Open Positions</p>
+              </div>
+            </div>
           </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+            <h2 className="font-semibold">Applications</h2>
+            <div className="mt-4 grid grid-cols-2 gap-4">
+              <div className="rounded-xl bg-purple-50 p-4 dark:bg-purple-900/20">
+                <p className="text-2xl font-bold text-purple-700 dark:text-purple-300">{dashboard.totalApplications}</p>
+                <p className="text-sm text-slate-500">Total Applications</p>
+              </div>
+              <div className="rounded-xl bg-amber-50 p-4 dark:bg-amber-900/20">
+                <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">{dashboard.pendingApplications}</p>
+                <p className="text-sm text-slate-500">Pending Review</p>
+              </div>
+            </div>
+          </div>
+          {categoryData.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 lg:col-span-2 dark:border-slate-800 dark:bg-slate-900">
+              <h2 className="font-semibold">Jobs by Category</h2>
+              <ResponsiveContainer width="100%" height={250} className="mt-4">
+                <BarChart data={categoryData}>
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          {dashboard.applicationsByStatus && Object.keys(dashboard.applicationsByStatus).length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 lg:col-span-2 dark:border-slate-800 dark:bg-slate-900">
+              <h2 className="font-semibold">Applications by Status</h2>
+              <ResponsiveContainer width="100%" height={250} className="mt-4">
+                <PieChart>
+                  <Pie
+                    data={Object.entries(dashboard.applicationsByStatus).map(([name, value]) => ({ name, value }))}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    label
+                  >
+                    {Object.keys(dashboard.applicationsByStatus).map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       )}
 
       {tab === 'jobs' && (
         <div className="mt-8">
-          {/* Mode banner */}
-          <div className={`mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 p-4 ${
-            editingId
-              ? 'border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30'
-              : 'border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/30'
-          }`}>
-            <div className="flex items-center gap-3">
-              {editingId ? (
-                <>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800">
-                    <Pencil className="h-5 w-5 text-amber-800 dark:text-amber-200" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-amber-900 dark:text-amber-200">Editing Existing Job</p>
-                    <p className="text-sm text-amber-700 dark:text-amber-400">{editingJob?.title || `Job #${editingId}`}</p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-200 dark:bg-emerald-800">
-                    <Plus className="h-5 w-5 text-emerald-800 dark:text-emerald-200" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-emerald-900 dark:text-emerald-200">Post a New Job</p>
-                    <p className="text-sm text-emerald-700 dark:text-emerald-400">Fill in the form below to create a new listing</p>
-                  </div>
-                </>
-              )}
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-semibold">Your Job Listings</h2>
+              <p className="text-sm text-slate-500">Create, edit, and manage job postings on dedicated pages</p>
             </div>
-            {editingId && (
-              <button
-                onClick={startNewJob}
-                className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-slate-900 dark:text-amber-300"
-              >
-                <X className="h-4 w-4" /> Cancel Edit — Post New Instead
-              </button>
-            )}
+            <Link
+              to="/admin/jobs/new"
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
+            >
+              <Plus className="h-4 w-4" /> Post New Job
+            </Link>
           </div>
 
-          <div className="grid gap-8 xl:grid-cols-5">
-            {/* Job form */}
-            <form onSubmit={saveJob} className={`space-y-4 rounded-2xl border-2 bg-white p-6 xl:col-span-3 dark:bg-slate-900 ${
-              editingId ? 'border-amber-200 dark:border-amber-800' : 'border-emerald-200 dark:border-emerald-800'
-            }`}>
-              <h2 className="text-lg font-semibold">
-                {editingId ? '✏️ Edit Job Details' : '➕ New Job Posting Form'}
-              </h2>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="text-sm font-medium">Job Title *</label>
-                  <input value={jobForm.title} onChange={(e) => setJobForm({ ...jobForm, title: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800" required placeholder="e.g. Senior Software Engineer" />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-sm font-medium">Company *</label>
-                    <button type="button" onClick={syncCompanyFromProfile} className="text-xs font-medium text-primary-600 hover:underline">
-                      Sync from profile
+          {jobs.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-12 text-center dark:border-slate-700">
+              <p className="text-slate-500">No jobs posted yet.</p>
+              <Link to="/admin/jobs/new" className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary-600 hover:underline">
+                <Plus className="h-4 w-4" /> Create your first listing
+              </Link>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {jobs.map((job) => (
+                <div key={job.id} className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                  <p className="font-semibold leading-tight">{job.title}</p>
+                  <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+                    <Building2 className="h-3 w-3" />{job.company}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                    <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{job.location}</span>
+                    <span className="flex items-center gap-1"><IndianRupee className="h-3 w-3" />{formatSalary(job.salaryMin, job.salaryMax)}</span>
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${job.status === 'OPEN' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                      {job.status}
+                    </span>
+                    {job.featured && <span className="rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-medium text-primary-700">Featured</span>}
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+                    <Link
+                      to={`/jobs/${job.id}`}
+                      className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 py-2 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" /> View
+                    </Link>
+                    <Link
+                      to={`/admin/jobs/${job.id}/edit`}
+                      className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-slate-100 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => deleteJob(job.id)}
+                      className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-100 dark:bg-red-950/30"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  <input
-                    value={jobForm.company}
-                    onChange={(e) => setJobForm({ ...jobForm, company: e.target.value })}
-                    className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800"
-                    required
-                    placeholder="Your recruiting company (e.g. Xceed Technologies)"
-                  />
-                  {!jobForm.company && (
-                    <p className="mt-1 text-xs text-amber-600">
-                      Set company in <Link to="/admin?tab=profile" className="underline">Profile</Link> or enter it here
-                    </p>
-                  )}
                 </div>
-                <div>
-                  <label className="text-sm font-medium">Location *</label>
-                  <input value={jobForm.location} onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800" required placeholder="Hyderabad / Remote" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Job Type *</label>
-                  <select value={jobForm.jobType} onChange={(e) => setJobForm({ ...jobForm, jobType: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800" required>
-                    {JOB_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Category</label>
-                  <select value={jobForm.category} onChange={(e) => setJobForm({ ...jobForm, category: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800">
-                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Experience Level</label>
-                  <select value={jobForm.experienceLevel} onChange={(e) => setJobForm({ ...jobForm, experienceLevel: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800">
-                    {EXPERIENCE_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Min Salary (₹/year)</label>
-                  <input type="number" value={jobForm.salaryMin} onChange={(e) => setJobForm({ ...jobForm, salaryMin: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800" placeholder="800000" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Max Salary (₹/year)</label>
-                  <input type="number" value={jobForm.salaryMax} onChange={(e) => setJobForm({ ...jobForm, salaryMax: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800" placeholder="1500000" />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium">Required Skills (comma separated)</label>
-                <input value={jobForm.skills} onChange={(e) => setJobForm({ ...jobForm, skills: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800" placeholder="Java, React, MySQL" />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium">Job Description *</label>
-                <textarea value={jobForm.description} onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })} rows={8} className="mt-1 w-full rounded-lg border px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800" required placeholder="Describe the role, responsibilities, and requirements..." />
-              </div>
-
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={jobForm.featured} onChange={(e) => setJobForm({ ...jobForm, featured: e.target.checked })} className="rounded" />
-                Mark as Featured Job
-              </label>
-
-              <div className="flex gap-3 pt-2">
-                <button type="submit" className={`rounded-xl px-8 py-3 font-semibold text-white ${editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
-                  {editingId ? 'Save Changes' : 'Publish Job'}
-                </button>
-                {editingId && (
-                  <button type="button" onClick={startNewJob} className="rounded-xl border px-6 py-3 font-medium hover:bg-slate-50 dark:hover:bg-slate-800">
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </form>
-
-            {/* Job list */}
-            <div className="xl:col-span-2">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="font-semibold">Your Job Listings</h3>
-                <button onClick={startNewJob} className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700">
-                  <Plus className="h-3.5 w-3.5" /> New Job
-                </button>
-              </div>
-              <div className="max-h-[700px] space-y-3 overflow-y-auto pr-1">
-                {jobs.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No jobs posted yet. Use the form to create your first listing.</p>
-                ) : (
-                  jobs.map((job) => (
-                    <div
-                      key={job.id}
-                      className={`rounded-xl border-2 p-4 transition ${
-                        editingId === job.id
-                          ? 'border-amber-400 bg-amber-50 shadow-md dark:border-amber-600 dark:bg-amber-950/20'
-                          : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold leading-tight">{job.title}</p>
-                          <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
-                            <Building2 className="h-3 w-3" />{job.company}
-                          </p>
-                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                            <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{job.location}</span>
-                            <span className="flex items-center gap-1"><IndianRupee className="h-3 w-3" />{formatSalary(job.salaryMin, job.salaryMax)}</span>
-                          </div>
-                          <div className="mt-2 flex gap-2">
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${job.status === 'OPEN' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
-                              {job.status}
-                            </span>
-                            {job.featured && <span className="rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-medium text-primary-700">Featured</span>}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-                        <button
-                          onClick={() => editJob(job)}
-                          className={`flex-1 inline-flex items-center justify-center gap-1 rounded-lg py-1.5 text-xs font-medium ${
-                            editingId === job.id ? 'bg-amber-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                          }`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" /> {editingId === job.id ? 'Editing...' : 'Edit'}
-                        </button>
-                        <button onClick={() => deleteJob(job.id)} className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 dark:bg-red-950/30">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+              ))}
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -552,28 +371,18 @@ export default function AdminDashboard() {
                       )}
                     </div>
 
-                    <div className="flex flex-col gap-2">
-                      <button
-                        onClick={() => setSelectedAppId(app.id)}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
-                      >
-                        <Eye className="h-4 w-4" /> View Application
-                      </button>
-                      {app.hasResume && (
-                        <button
-                          onClick={() => setPreviewResumeApp(app)}
-                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                        >
-                          <Briefcase className="h-4 w-4" /> View Resume
-                        </button>
-                      )}
-                    </div>
+                    <Link
+                      to={`/admin/applicants/${app.id}`}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+                    >
+                      <Eye className="h-4 w-4" /> View Application
+                    </Link>
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
                     <span className="mr-1 self-center text-xs text-slate-400">Quick actions:</span>
                     {['SHORTLISTED', 'REJECTED', 'INTERVIEW_SCHEDULED', 'HIRED'].map((s) => (
-                      <button key={s} onClick={() => updateStatus(app.id, s)} className="rounded-lg border px-3 py-1 text-xs hover:bg-slate-50 dark:hover:bg-slate-800">
+                      <button key={s} type="button" onClick={() => updateStatus(app.id, s)} className="rounded-lg border px-3 py-1 text-xs hover:bg-slate-50 dark:hover:bg-slate-800">
                         {s.replace('_', ' ')}
                       </button>
                     ))}
@@ -599,7 +408,7 @@ export default function AdminDashboard() {
         <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
           Your profile still has a placeholder company name. Go to{' '}
           <Link to="/admin?tab=profile" className="font-semibold underline">Profile</Link>
-          {' '}and set <strong>Company Name</strong> to <strong>XPO</strong> (or your real company) before posting jobs.
+          {' '}and set <strong>Company Name</strong> to your real company before posting jobs.
         </div>
       )}
 
@@ -610,7 +419,7 @@ export default function AdminDashboard() {
             <h2 className="font-semibold">AI Job Description Generator</h2>
           </div>
           <p className="mt-2 text-sm text-slate-500">
-            Descriptions use your recruiting company from your profile.
+            Descriptions use your recruiting company from your profile. Generated content opens on the new job page.
           </p>
           <div className="mt-4 space-y-3">
             <div>
@@ -618,7 +427,12 @@ export default function AdminDashboard() {
               <input placeholder="e.g. Java Full Stack Developer" value={aiForm.jobTitle} onChange={(e) => setAiForm({ ...aiForm, jobTitle: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" required />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-500">Company *</label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-medium text-slate-500">Company *</label>
+                <button type="button" onClick={syncCompanyFromProfile} className="text-xs font-medium text-primary-600 hover:underline">
+                  Sync from profile
+                </button>
+              </div>
               <input placeholder="Your company name" value={aiForm.company} onChange={(e) => setAiForm({ ...aiForm, company: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" required />
             </div>
             <div>
@@ -636,27 +450,10 @@ export default function AdminDashboard() {
               <input placeholder="Java, Spring Boot, React" value={aiForm.skills} onChange={(e) => setAiForm({ ...aiForm, skills: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" required />
             </div>
             <button type="button" onClick={generateDescription} className="rounded-lg bg-primary-600 px-6 py-2 font-medium text-white hover:bg-primary-700">
-              Generate Description
+              Generate &amp; Open Job Form
             </button>
           </div>
         </div>
-      )}
-
-      {selectedAppId && (
-        <ApplicationDetailModal
-          applicationId={selectedAppId}
-          onClose={() => setSelectedAppId(null)}
-          onStatusUpdate={updateStatus}
-        />
-      )}
-
-      {previewResumeApp && (
-        <ResumePreviewModal
-          resumePath={previewResumeApp.resumeUrl}
-          title={`Resume — ${previewResumeApp.userName}`}
-          subtitle={`Applied for ${previewResumeApp.jobTitle}`}
-          onClose={() => setPreviewResumeApp(null)}
-        />
       )}
     </div>
   );
