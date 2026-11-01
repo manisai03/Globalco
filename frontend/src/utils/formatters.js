@@ -5,6 +5,13 @@ export function formatSalary(min, max) {
   return max ? `Up to ${fmt(max)}` : `From ${fmt(min)}`;
 }
 
+export function formatSalaryShort(min, max) {
+  if (!min && !max) return 'Competitive';
+  const fmt = (n) => `₹${(Number(n) / 100000).toFixed(1)}L`;
+  if (min && max) return `${fmt(min)} – ${fmt(max)}`;
+  return max ? `Up to ${fmt(max)}` : `From ${fmt(min)}`;
+}
+
 export function daysAgo(dateStr) {
   if (!dateStr) return 'Recently';
   const days = Math.floor((Date.now() - new Date(dateStr)) / (1000 * 60 * 60 * 24));

@@ -1,3 +1,6 @@
+import { Label } from '@/components/ui/label';
+import SelectField from './common/SelectField';
+
 const MONTHS = [
   { value: '01', label: 'January' },
   { value: '02', label: 'February' },
@@ -19,28 +22,24 @@ const YEARS = Array.from({ length: currentYear - 1979 }, (_, i) => String(curren
 export default function YearMonthPicker({ label, month, year, onMonthChange, onYearChange }) {
   return (
     <div>
-      {label && <label className="mb-1 block text-xs font-medium text-slate-500">{label}</label>}
+      {label && <Label className="mb-1 text-xs text-muted-foreground">{label}</Label>}
       <div className="flex gap-2">
-        <select
-          value={month || ''}
-          onChange={(e) => onMonthChange(e.target.value)}
-          className="flex-1 rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-        >
-          <option value="">Month</option>
-          {MONTHS.map((m) => (
-            <option key={m.value} value={m.value}>{m.label}</option>
-          ))}
-        </select>
-        <select
-          value={year || ''}
-          onChange={(e) => onYearChange(e.target.value)}
-          className="flex-1 rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-        >
-          <option value="">Year</option>
-          {YEARS.map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
+        <SelectField
+          value={month}
+          onValueChange={onMonthChange}
+          options={MONTHS}
+          emptyLabel="Month"
+          aria-label={label ? `${label} month` : 'Month'}
+          className="flex-1"
+        />
+        <SelectField
+          value={year}
+          onValueChange={onYearChange}
+          options={YEARS}
+          emptyLabel="Year"
+          aria-label={label ? `${label} year` : 'Year'}
+          className="flex-1"
+        />
       </div>
     </div>
   );

@@ -4,7 +4,6 @@ import com.globalco.jobboard.dto.request.ChangePasswordRequest;
 import com.globalco.jobboard.dto.request.ProfileUpdateRequest;
 import com.globalco.jobboard.dto.response.UserResponse;
 import com.globalco.jobboard.exception.BadRequestException;
-import com.globalco.jobboard.exception.ResourceNotFoundException;
 import com.globalco.jobboard.mapper.EntityMapper;
 import com.globalco.jobboard.model.Admin;
 import com.globalco.jobboard.model.AuthenticatedAccount;
@@ -32,12 +31,6 @@ public class UserService {
 
     public UserResponse getProfile(AuthenticatedAccount account) {
         return EntityMapper.toUserResponse(account);
-    }
-
-    public UserResponse getUserById(Long id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        return EntityMapper.toUserResponse(user);
     }
 
     @Transactional
@@ -75,7 +68,7 @@ public class UserService {
 
     @Transactional
     public UserResponse uploadResume(User user, MultipartFile file) {
-        String url = fileStorageService.store(file, "resumes");
+        String url = fileStorageService.store(file, "resumes", FileStorageService.RESUME_EXTENSIONS);
         user.setResumeUrl(url);
         user.setResumeUploadedAt(LocalDateTime.now());
         return EntityMapper.toUserResponse(userRepository.save(user));

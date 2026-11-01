@@ -45,9 +45,4 @@ public class UserController {
         userService.changePassword(securityUtils.getCurrentAccount(), request);
         return ApiResponse.ok("Password updated", null);
     }
-
-    @GetMapping("/{id}")
-    public ApiResponse<UserResponse> getUser(@PathVariable Long id) {
-        return ApiResponse.ok(userService.getUserById(id));
-    }
 }

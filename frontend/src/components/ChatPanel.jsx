@@ -1,20 +1,16 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-
 import { useSearchParams } from 'react-router-dom';
-
+import { ArrowLeft, MessageSquare, Send, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import api, { unwrap } from '../services/api';
-
 import { chatSocket } from '../services/chatSocket';
-
 import { useAuth } from '../context/AuthContext';
 
-import toast from 'react-hot-toast';
-
-
-
 const FALLBACK_POLL_MS = 5000;
-
-
 
 function isPartnerMessage(msg, partnerId, myId, myType, partnerType) {
   const iSent = msg.senderId === myId && msg.senderAccountType === myType;
@@ -24,510 +20,304 @@ function isPartnerMessage(msg, partnerId, myId, myType, partnerType) {
   return (theySent && iReceived) || (iSent && theyReceived);
 }
 
+function initials(name) {
+  return (name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
+}
 
+function UnreadBadge({ count }) {
+  if (!count) return null;
+  return (
+    <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-white">
+      {count > 9 ? '9+' : count}
+    </span>
+  );
+}
 
 export default function ChatPanel({ embedded = false, onUnreadChange }) {
-
   const { user, isAdmin } = useAuth();
-
   const [searchParams] = useSearchParams();
-
   const [contacts, setContacts] = useState([]);
-
   const [selected, setSelected] = useState(null);
-
   const [messages, setMessages] = useState([]);
-
   const [content, setContent] = useState('');
-
   const [sending, setSending] = useState(false);
-
   const [live, setLive] = useState(chatSocket.isConnected());
-
-  const bottomRef = useRef(null);
-
-  const messagesRef = useRef([]);
-
+  const scrollRef = useRef(null);
   const selectedRef = useRef(null);
 
-
-
-  selectedRef.current = selected;
-
-  messagesRef.current = messages;
-
-
-
-  const loadContacts = useCallback(async () => {
-
-    try {
-
-      const res = await api.get('/api/messages/partners');
-
-      setContacts(unwrap(res));
-
-    } catch { /* ignore */ }
-
-  }, []);
-
-
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
 
   const myAccountType = isAdmin ? 'ADMIN' : 'USER';
   const partnerAccountType = isAdmin ? 'USER' : 'ADMIN';
 
-  const loadMessages = useCallback(async (partnerId, silent = false) => {
-
-    if (!partnerId) return;
-
+  const loadContacts = useCallback(async () => {
     try {
-
-      const res = await api.get(`/api/messages/conversation/${partnerId}`);
-
-      const data = unwrap(res);
-
-      if (selectedRef.current?.id === partnerId) {
-
-        setMessages(data);
-
-        if (!silent) loadContacts();
-
-      }
-
+      const res = await api.get('/api/messages/partners');
+      setContacts(unwrap(res));
     } catch { /* ignore */ }
+  }, []);
 
+  const loadMessages = useCallback(async (partnerId, silent = false) => {
+    if (!partnerId) return;
+    try {
+      const res = await api.get(`/api/messages/conversation/${partnerId}`);
+      const data = unwrap(res);
+      if (selectedRef.current?.id === partnerId) {
+        setMessages(data);
+        if (!silent) loadContacts();
+      }
+    } catch { /* ignore */ }
   }, [loadContacts]);
-
-
 
   const appendMessage = useCallback((msg) => {
-
     const partnerId = selectedRef.current?.id;
-
     if (partnerId && isPartnerMessage(msg, partnerId, user.id, myAccountType, partnerAccountType)) {
-
       setMessages((prev) => {
-
         if (prev.some((m) => m.id === msg.id)) return prev;
-
         if (prev.some((m) => String(m.id).startsWith('temp-') && m.content === msg.content && m.senderId === msg.senderId)) {
-
           return prev.map((m) => (String(m.id).startsWith('temp-') && m.content === msg.content ? msg : m));
-
         }
-
         return [...prev, msg];
-
       });
-
     }
-
     loadContacts();
-
     onUnreadChange?.();
-
   }, [user.id, myAccountType, partnerAccountType, loadContacts, onUnreadChange]);
 
-
-
   const poll = useCallback(async () => {
-
     if (document.hidden || chatSocket.isConnected()) return;
-
     const partnerId = selectedRef.current?.id;
-
     if (partnerId) await loadMessages(partnerId, true);
-
     await loadContacts();
-
   }, [loadMessages, loadContacts]);
 
-
-
-  useEffect(() => {
-
-    loadContacts();
-
-  }, [loadContacts]);
-
-
-
   useEffect(() => chatSocket.onMessage(appendMessage), [appendMessage]);
-
   useEffect(() => chatSocket.onStatus(setLive), []);
 
-
-
+  const preselectId = searchParams.get('userId');
   useEffect(() => {
+    api.get('/api/messages/partners')
+      .then((res) => {
+        const list = unwrap(res);
+        setContacts(list);
+        if (preselectId) {
+          const contact = list.find((c) => c.id === Number(preselectId));
+          if (contact) setSelected(contact);
+        }
+      })
+      .catch(() => {});
+  }, [preselectId]);
 
-    const userId = searchParams.get('userId');
-
-    if (!userId) return;
-
-    const id = Number(userId);
-
-    api.get('/api/messages/partners').then((res) => {
-
-      const list = unwrap(res);
-
-      setContacts(list);
-
-      const contact = list.find((c) => c.id === id);
-
-      if (contact) setSelected(contact);
-
-    }).catch(() => {});
-
-  }, [searchParams]);
-
-
-
+  const selectedId = selected?.id;
   useEffect(() => {
-
-    if (!selected) return;
-
-    loadMessages(selected.id);
-
+    if (!selectedId) return undefined;
+    api.get(`/api/messages/conversation/${selectedId}`)
+      .then((res) => {
+        if (selectedRef.current?.id === selectedId) setMessages(unwrap(res));
+        loadContacts();
+      })
+      .catch(() => {});
     const interval = setInterval(poll, FALLBACK_POLL_MS);
-
-    const onFocus = () => { loadMessages(selected.id, true); loadContacts(); };
-
+    const onFocus = () => { loadMessages(selectedId, true); loadContacts(); };
     window.addEventListener('focus', onFocus);
-
     document.addEventListener('visibilitychange', onFocus);
-
     return () => {
-
       clearInterval(interval);
-
       window.removeEventListener('focus', onFocus);
-
       document.removeEventListener('visibilitychange', onFocus);
-
     };
+  }, [selectedId, poll, loadMessages, loadContacts]);
 
-  }, [selected, poll, loadMessages, loadContacts]);
-
-
-
+  const lastMessageId = messages[messages.length - 1]?.id;
   useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [lastMessageId, selectedId]);
 
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-
-  }, [messages]);
-
-
+  const selectContact = (c) => {
+    if (c.id !== selectedId) setMessages([]);
+    setSelected(c);
+  };
 
   const canSend = isAdmin ? selected?.identityRevealed : selected?.canReply;
 
-
-
   const send = async (e) => {
-
     e.preventDefault();
-
     if (!content.trim() || !selected || sending || !canSend) return;
-
     const text = content.trim();
-
     setContent('');
-
     setSending(true);
 
-
-
     const optimistic = {
-
       id: `temp-${Date.now()}`,
-
       senderId: user.id,
       senderAccountType: myAccountType,
       receiverId: selected.id,
       receiverAccountType: partnerAccountType,
       content: text,
-
       createdAt: new Date().toISOString(),
-
       read: true,
-
     };
-
     setMessages((prev) => [...prev, optimistic]);
 
-
-
     try {
-
       const res = await api.post('/api/messages', { receiverId: selected.id, content: text });
-
       const saved = unwrap(res);
-
       setMessages((prev) => prev.map((m) => (m.id === optimistic.id ? saved : m)));
-
       loadContacts();
-
     } catch (err) {
-
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
-
       setContent(text);
-
       toast.error(err.response?.data?.message || 'Failed to send message');
-
     } finally {
-
       setSending(false);
-
     }
-
   };
 
-
-
-  const heightClass = embedded ? 'h-[min(560px,70vh)]' : 'h-[calc(100vh-12rem)]';
-
+  const heightClass = embedded ? 'h-[min(600px,72vh)]' : 'h-[calc(100vh-12rem)]';
   const totalUnread = contacts.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+  const isMine = (m) => m.senderId === user.id && m.senderAccountType === myAccountType;
+
+  const statusText = isAdmin && !selected?.identityRevealed
+    ? 'View their application in Applicants to unlock messaging'
+    : isAdmin
+      ? (live ? 'Conversation with candidate' : 'Reconnecting…')
+      : (canSend ? (live ? 'Reply to recruiter · instant delivery' : 'Reply mode · syncing') : 'Waiting for recruiter to message you');
 
   return (
-    <div className={`flex min-h-0 ${heightClass} gap-4`}>
-
-      <div className="w-64 shrink-0 overflow-y-auto rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 sm:w-72">
-
-        <div className="flex items-center justify-between border-b border-slate-200 p-4 dark:border-slate-800">
-
-          <h2 className="text-sm font-semibold">{isAdmin ? 'Candidates' : 'Messages'}</h2>
-
-          {totalUnread > 0 && (
-
-            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-
-              {totalUnread > 9 ? '9+' : totalUnread}
-
-            </span>
-
-          )}
-
-        </div>
-
-        {contacts.length === 0 ? (
-
-          <p className="p-4 text-sm text-slate-500">
-
-            {isAdmin
-
-              ? 'Select an applicant to start a conversation'
-
-              : 'No messages yet. A recruiter will appear here once they message you.'}
-
-          </p>
-
-        ) : (
-
-          contacts.map((c) => (
-
-            <button
-
-              key={c.id}
-
-              onClick={() => setSelected(c)}
-
-              className={`relative block w-full border-b border-slate-100 p-4 text-left transition hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800 ${
-
-                selected?.id === c.id ? 'bg-primary-50 dark:bg-primary-900/20' : ''
-
-              }`}
-
-            >
-
-              <div className="flex items-start justify-between gap-2">
-
-                <div className="min-w-0 flex-1">
-
-                  <p className="truncate font-medium">{c.fullName}</p>
-
-                  <p className="truncate text-xs text-slate-500">{c.email}</p>
-
-                  {!isAdmin && c.companyName && (
-
-                    <p className="mt-0.5 truncate text-xs text-primary-600">{c.companyName}</p>
-
-                  )}
-
-                </div>
-
-                {c.unreadCount > 0 && (
-
-                  <span className="mt-0.5 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-
-                    {c.unreadCount > 9 ? '9+' : c.unreadCount}
-
-                  </span>
-
-                )}
-
-              </div>
-
-            </button>
-
-          ))
-
+    <div className={cn('flex min-h-0 gap-4', heightClass)}>
+      <aside
+        className={cn(
+          'min-h-0 w-full shrink-0 flex-col overflow-hidden rounded-2xl border bg-card md:flex md:w-72',
+          selected ? 'hidden' : 'flex'
         )}
-
-      </div>
-
-
-
-      <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-
-        {selected ? (
-
-          <>
-
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-
-              <div>
-
-                <p className="font-semibold">{selected.fullName}</p>
-
-                <p className="text-xs text-slate-500">
-                  {isAdmin && !selected.identityRevealed
-                    ? 'View their application in Applicants to unlock messaging'
-                    : isAdmin
-                      ? (live ? 'Conversation with candidate' : 'Reconnecting…')
-                      : (canSend ? (live ? 'Reply to recruiter · instant delivery' : 'Reply mode · syncing') : 'Waiting for recruiter to message you')}
-                </p>
-
-              </div>
-
-              <span className={`flex items-center gap-1.5 text-xs ${live ? 'text-emerald-600' : 'text-amber-600'}`}>
-
-                <span className={`h-2 w-2 rounded-full ${live ? 'animate-pulse bg-emerald-500' : 'bg-amber-500'}`} />
-
-                {live ? 'Live' : 'Syncing'}
-
-              </span>
-
-            </div>
-
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-
-              {messages.length === 0 && !isAdmin && (
-
-                <p className="text-center text-sm text-slate-400">No messages in this conversation yet.</p>
-
-              )}
-
-              {messages.map((m) => (
-
-                <div key={m.id} className={`flex ${m.senderId === user.id && m.senderAccountType === myAccountType ? 'justify-end' : 'justify-start'}`}>
-
-                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
-
-                    m.senderId === user.id && m.senderAccountType === myAccountType ? 'bg-primary-600 text-white' : 'bg-slate-100 dark:bg-slate-800'
-
-                  }`}>
-
-                    {m.content}
-
-                    <p className="mt-1 text-[10px] opacity-70">{new Date(m.createdAt).toLocaleTimeString()}</p>
-
-                  </div>
-
+      >
+        <div className="flex items-center justify-between border-b p-4">
+          <h2 className="text-sm font-semibold">{isAdmin ? 'Candidates' : 'Messages'}</h2>
+          <UnreadBadge count={totalUnread} />
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {contacts.length === 0 ? (
+            <p className="p-4 text-sm text-muted-foreground">
+              {isAdmin
+                ? 'Select an applicant to start a conversation'
+                : 'No messages yet. A recruiter will appear here once they message you.'}
+            </p>
+          ) : (
+            contacts.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => selectContact(c)}
+                aria-current={selectedId === c.id ? 'true' : undefined}
+                className={cn(
+                  'flex w-full items-start gap-3 border-b p-4 text-left transition-colors last:border-b-0 hover:bg-muted/60 focus-visible:bg-muted focus-visible:outline-none',
+                  selectedId === c.id && 'bg-accent hover:bg-accent'
+                )}
+              >
+                <Avatar className="size-9">
+                  <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">{initials(c.fullName)}</AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{c.fullName}</p>
+                  <p className="truncate text-xs text-muted-foreground">{c.email}</p>
+                  {!isAdmin && c.companyName && (
+                    <p className="mt-0.5 truncate text-xs text-primary">{c.companyName}</p>
+                  )}
                 </div>
+                <UnreadBadge count={c.unreadCount} />
+              </button>
+            ))
+          )}
+        </div>
+      </aside>
 
+      <section
+        className={cn(
+          'min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border bg-card md:flex',
+          selected ? 'flex' : 'hidden'
+        )}
+      >
+        {selected ? (
+          <>
+            <header className="flex items-center gap-3 border-b px-4 py-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="md:hidden"
+                onClick={() => setSelected(null)}
+                aria-label="Back to conversations"
+              >
+                <ArrowLeft />
+              </Button>
+              <Avatar className="size-9">
+                <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">{initials(selected.fullName)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-semibold">{selected.fullName}</p>
+                <p className="truncate text-xs text-muted-foreground">{statusText}</p>
+              </div>
+              <span className={cn('flex shrink-0 items-center gap-1.5 text-xs', live ? 'text-emerald-600' : 'text-amber-600')}>
+                <span className={cn('size-2 rounded-full', live ? 'animate-pulse bg-emerald-500' : 'bg-amber-500')} />
+                {live ? 'Live' : 'Syncing'}
+              </span>
+            </header>
+
+            <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
+              {messages.length === 0 && (
+                <p className="text-center text-sm text-muted-foreground">No messages in this conversation yet.</p>
+              )}
+              {messages.map((m) => (
+                <div key={m.id} className={cn('flex', isMine(m) ? 'justify-end' : 'justify-start')}>
+                  <div
+                    className={cn(
+                      'max-w-[80%] rounded-2xl px-4 py-2 text-sm',
+                      isMine(m) ? 'rounded-br-sm bg-primary text-primary-foreground' : 'rounded-bl-sm bg-muted'
+                    )}
+                  >
+                    <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                    <p className="mt-1 text-[10px] opacity-70">
+                      {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </div>
               ))}
-
-              <div ref={bottomRef} />
-
             </div>
 
             {canSend ? (
-
-              <form onSubmit={send} className="flex gap-2 border-t border-slate-200 p-4 dark:border-slate-800">
-
-                <input
-
+              <form onSubmit={send} className="flex gap-2 border-t p-3">
+                <Input
                   value={content}
-
                   onChange={(e) => setContent(e.target.value)}
-
                   placeholder={isAdmin ? 'Type a message to start or reply…' : 'Type your reply…'}
-
-                  className="flex-1 rounded-xl border px-4 py-2.5 dark:border-slate-700 dark:bg-slate-800"
-
+                  aria-label="Message"
+                  className="h-10 flex-1"
                   autoComplete="off"
-
+                  maxLength={2000}
                 />
-
-                <button
-
-                  type="submit"
-
-                  disabled={sending || !content.trim()}
-
-                  className="rounded-xl bg-primary-600 px-6 py-2.5 font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-
-                >
-
-                  Send
-
-                </button>
-
+                <Button type="submit" className="h-10" disabled={sending || !content.trim()}>
+                  {sending ? <Loader2 className="animate-spin" /> : <Send />}
+                  <span className="hidden sm:inline">Send</span>
+                </Button>
               </form>
-
-            ) : isAdmin ? (
-
-              <div className="border-t border-slate-200 p-4 text-center text-sm text-slate-500 dark:border-slate-800">
-
-                Open this candidate&apos;s application from the Applicants tab before sending a message.
-
-              </div>
-
             ) : (
-
-              <div className="border-t border-slate-200 p-4 text-center text-sm text-slate-500 dark:border-slate-800">
-
-                Only recruiters can start conversations. You can reply once they message you.
-
+              <div className="border-t p-4 text-center text-sm text-muted-foreground">
+                {isAdmin
+                  ? "Open this candidate's application from the Applicants tab before sending a message."
+                  : 'Only recruiters can start conversations. You can reply once they message you.'}
               </div>
-
             )}
-
           </>
-
         ) : (
-
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-slate-500">
-
-            <MessageSquareIcon />
-
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
+            <MessageSquare className="size-10 opacity-40" />
             <p>{isAdmin ? 'Select a candidate to message' : 'Select a conversation to view messages'}</p>
-
           </div>
-
         )}
-
-      </div>
-
+      </section>
     </div>
-
   );
-
 }
-
-
-
-function MessageSquareIcon() {
-
-  return (
-
-    <svg className="h-10 w-10 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-
-    </svg>
-
-  );
-
-}
-
-

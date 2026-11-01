@@ -1,16 +1,11 @@
 import { useEffect, useState } from 'react';
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { chartTooltipProps } from '@/lib/chart';
 import api, { unwrap } from '../services/api';
-import LoadingSpinner from './LoadingSpinner';
-
-const STATUS_COLORS = {
-  PENDING: '#f59e0b',
-  SHORTLISTED: '#3b82f6',
-  REJECTED: '#ef4444',
-  INTERVIEW_SCHEDULED: '#8b5cf6',
-  HIRED: '#10b981',
-  WITHDRAWN: '#94a3b8',
-};
+import { STATUS_CHART_COLORS } from '../utils/applicationStatus';
 
 const STATUS_LABELS = {
   PENDING: 'Pending Review',
@@ -29,15 +24,18 @@ const PERIODS = [
 
 export default function ApplicantStatusChart() {
   const [period, setPeriod] = useState('month');
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState({ period: null, data: null });
 
   useEffect(() => {
-    setLoading(true);
+    let cancelled = false;
     api.get(`/api/admin/analytics/applications?period=${period}`)
-      .then((res) => setData(unwrap(res)))
-      .finally(() => setLoading(false));
+      .then((res) => { if (!cancelled) setResult({ period, data: unwrap(res) }); })
+      .catch(() => { if (!cancelled) setResult({ period, data: null }); });
+    return () => { cancelled = true; };
   }, [period]);
+
+  const loading = result.period !== period;
+  const data = loading ? null : result.data;
 
   const chartData = data
     ? Object.entries(data.statusBreakdown || {})
@@ -50,70 +48,69 @@ export default function ApplicantStatusChart() {
     : [];
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h3 className="font-semibold">Applicant Status Breakdown</h3>
-          <p className="text-sm text-slate-500">
-            {data?.total ?? 0} applications · {data?.periodLabel}
-          </p>
-        </div>
-        <div className="flex rounded-lg border border-slate-200 p-1 dark:border-slate-700">
-          {PERIODS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => setPeriod(p.key)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                period === p.key
-                  ? 'bg-primary-600 text-white'
-                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Applicant Status Breakdown</CardTitle>
+        <CardDescription>
+          {loading ? 'Loading…' : `${data?.total ?? 0} applications · ${data?.periodLabel ?? ''}`}
+        </CardDescription>
+        <CardAction>
+          <Tabs value={period} onValueChange={setPeriod}>
+            <TabsList>
+              {PERIODS.map((p) => (
+                <TabsTrigger key={p.key} value={p.key} className="px-3 text-xs">{p.label}</TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </CardAction>
+      </CardHeader>
 
-      {loading ? (
-        <div className="flex justify-center py-16"><LoadingSpinner /></div>
-      ) : chartData.length === 0 ? (
-        <p className="py-16 text-center text-sm text-slate-500">No applications in this period.</p>
-      ) : (
-        <>
-          <ResponsiveContainer width="100%" height={280}>
-            <PieChart>
-              <Pie
-                data={chartData}
-                dataKey="value"
-                nameKey="name"
-                cx="50%"
-                cy="50%"
-                innerRadius={55}
-                outerRadius={95}
-                paddingAngle={3}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-              >
-                {chartData.map((entry) => (
-                  <Cell key={entry.status} fill={STATUS_COLORS[entry.status] || '#64748b'} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value, name) => [`${value} applicants`, name]} />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {chartData.map((item) => (
-              <div key={item.status} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
-                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: STATUS_COLORS[item.status] }} />
-                <span className="text-slate-600 dark:text-slate-300">{item.name}</span>
-                <span className="ml-auto font-semibold">{item.value}</span>
-              </div>
-            ))}
+      <CardContent>
+        {loading ? (
+          <div className="flex flex-col items-center gap-4 py-6">
+            <Skeleton className="size-48 rounded-full" />
+            <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-9" />)}
+            </div>
           </div>
-        </>
-      )}
-    </div>
+        ) : chartData.length === 0 ? (
+          <p className="py-16 text-center text-sm text-muted-foreground">No applications in this period.</p>
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie
+                  data={chartData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={95}
+                  paddingAngle={3}
+                  stroke="var(--card)"
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                >
+                  {chartData.map((entry) => (
+                    <Cell key={entry.status} fill={STATUS_CHART_COLORS[entry.status] || '#64748b'} />
+                  ))}
+                </Pie>
+                <Tooltip {...chartTooltipProps} formatter={(value, name) => [`${value} applicants`, name]} />
+              </PieChart>
+            </ResponsiveContainer>
+
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {chartData.map((item) => (
+                <div key={item.status} className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm">
+                  <span className="size-3 rounded-full" style={{ backgroundColor: STATUS_CHART_COLORS[item.status] }} />
+                  <span className="text-muted-foreground">{item.name}</span>
+                  <span className="ml-auto font-semibold">{item.value}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

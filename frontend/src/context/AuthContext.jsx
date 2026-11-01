@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import api, { unwrap } from '../services/api';
 import { authStorage, migrateFromLocalStorage } from '../services/authStorage';
 import { chatSocket } from '../services/chatSocket';
@@ -10,26 +10,27 @@ export function AuthProvider({ children }) {
     migrateFromLocalStorage();
     return authStorage.getUser();
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => Boolean(authStorage.getToken()));
 
   const isAdmin = user?.role === 'ROLE_ADMIN';
 
-  useEffect(() => {
-    const token = authStorage.getToken();
-    if (token) {
-      api.get('/api/users/me')
-        .then((res) => {
-          const data = unwrap(res);
-          setUser(data);
-          authStorage.setUser(data);
-          chatSocket.connect();
-        })
-        .catch(() => logout())
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+  const logout = useCallback(() => {
+    chatSocket.disconnect();
+    authStorage.clear();
+    setUser(null);
   }, []);
+
+  useEffect(() => {
+    if (!authStorage.getToken()) return;
+    api.get('/api/users/me')
+      .then((res) => {
+        const data = unwrap(res);
+        setUser(data);
+        authStorage.setUser(data);
+      })
+      .catch(() => logout())
+      .finally(() => setLoading(false));
+  }, [logout]);
 
   useEffect(() => {
     if (user) {
@@ -39,39 +40,35 @@ export function AuthProvider({ children }) {
     }
   }, [user]);
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     const res = await api.post('/api/auth/login', { email: email?.trim?.() ?? email, password });
     const data = unwrap(res);
     authStorage.setToken(data.token);
     authStorage.setUser(data.user);
     setUser(data.user);
     return data.user;
-  };
+  }, []);
 
-  const register = async (formData) => {
+  const register = useCallback(async (formData) => {
     const res = await api.post('/api/auth/register', formData);
     return unwrap(res);
-  };
+  }, []);
 
-  const logout = () => {
-    chatSocket.disconnect();
-    authStorage.clear();
-    setUser(null);
-  };
-
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     const res = await api.get('/api/users/me');
     const data = unwrap(res);
     setUser(data);
     authStorage.setUser(data);
     return data;
-  };
+  }, []);
 
-  return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, login, register, logout, refreshUser }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ user, loading, isAdmin, login, register, logout, refreshUser }),
+    [user, loading, isAdmin, login, register, logout, refreshUser]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => useContext(AuthContext);

@@ -73,7 +73,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_API_URL: https://job-board-api.onrender.com
+          VITE_API_URL: https://globalco-job-board-api-vpee.onrender.com
 
       - name: Upload frontend artifact
         uses: actions/upload-artifact@v4

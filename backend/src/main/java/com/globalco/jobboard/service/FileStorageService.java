@@ -10,23 +10,30 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class FileStorageService {
 
+    public static final Set<String> RESUME_EXTENSIONS = Set.of(".pdf", ".doc", ".docx");
+
     @Value("${app.upload.dir}")
     private String uploadDir;
 
-    public String store(MultipartFile file, String subfolder) {
+    public String store(MultipartFile file, String subfolder, Set<String> allowedExtensions) {
         if (file == null || file.isEmpty()) {
             throw new BadRequestException("File is empty");
         }
 
         String originalName = file.getOriginalFilename();
         String extension = originalName != null && originalName.contains(".")
-                ? originalName.substring(originalName.lastIndexOf('.'))
+                ? originalName.substring(originalName.lastIndexOf('.')).toLowerCase(Locale.ROOT)
                 : "";
+        if (!allowedExtensions.contains(extension)) {
+            throw new BadRequestException("Unsupported file type. Allowed: " + String.join(", ", allowedExtensions));
+        }
 
         String filename = UUID.randomUUID() + extension;
         Path targetDir = Paths.get(uploadDir, subfolder);

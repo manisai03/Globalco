@@ -51,12 +51,6 @@ public class ApplicationController {
         return ApiResponse.ok(applicationService.getApplicationDetail(id, securityUtils.getCurrentAccount()));
     }
 
-    @GetMapping("/jobs/{jobId}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ApiResponse<List<ApplicationResponse>> jobApplicants(@PathVariable Long jobId) {
-        return ApiResponse.ok(applicationService.getJobApplicants(jobId));
-    }
-
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<ApplicationResponse> updateStatus(

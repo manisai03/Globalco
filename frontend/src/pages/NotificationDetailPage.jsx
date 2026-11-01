@@ -1,10 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Bell, ExternalLink } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import api, { unwrap } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
+import EmptyState from '../components/common/EmptyState';
 import { getNotificationActionLabel, getNotificationActionLink } from '../utils/notificationLinks';
+
+function BackLink() {
+  return (
+    <Button asChild variant="ghost" size="sm" className="mb-6 -ml-2 text-muted-foreground">
+      <Link to="/notifications"><ArrowLeft /> Back to Notifications</Link>
+    </Button>
+  );
+}
 
 export default function NotificationDetailPage() {
   const { id } = useParams();
@@ -23,6 +35,7 @@ export default function NotificationDetailPage() {
           api.patch(`/api/notifications/${found.id}/read`).catch(() => {});
         }
       })
+      .catch(() => setNotification(null))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -30,53 +43,38 @@ export default function NotificationDetailPage() {
   const actionLink = notification ? getNotificationActionLink(notification, user) : null;
   const actionLabel = notification ? getNotificationActionLabel(notification.type, isAdmin) : null;
 
-  if (loading) {
-    return <div className="flex justify-center py-20"><LoadingSpinner /></div>;
-  }
+  if (loading) return <LoadingSpinner fullScreen />;
 
   if (!notification) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
-        <Link to="/notifications" className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-primary-600">
-          <ArrowLeft className="h-4 w-4" /> Back to Notifications
-        </Link>
-        <p className="text-slate-500">Notification not found.</p>
+        <BackLink />
+        <EmptyState icon={Bell} title="Notification not found" description="It may have been removed." />
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
-      <Link
-        to="/notifications"
-        className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-primary-600 dark:text-slate-400"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to Notifications
-      </Link>
-
-      <article className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-start justify-between gap-4">
-          <h1 className="text-2xl font-bold">{notification.title}</h1>
-          {!notification.read && (
-            <span className="shrink-0 rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
-              New
-            </span>
-          )}
-        </div>
-        <p className="mt-4 whitespace-pre-wrap text-slate-600 dark:text-slate-300">{notification.message}</p>
-        <p className="mt-4 text-sm text-slate-400">{new Date(notification.createdAt).toLocaleString()}</p>
-
+      <BackLink />
+      <Card>
+        <CardHeader className="flex-row items-start justify-between gap-4">
+          <CardTitle className="text-2xl font-bold">{notification.title}</CardTitle>
+          {!notification.read && <Badge className="bg-accent text-accent-foreground">New</Badge>}
+        </CardHeader>
+        <CardContent>
+          <p className="whitespace-pre-wrap text-muted-foreground">{notification.message}</p>
+          <p className="mt-4 text-sm text-muted-foreground">{new Date(notification.createdAt).toLocaleString()}</p>
+        </CardContent>
         {actionLink && actionLink !== `/notifications/${notification.id}` && (
-          <button
-            type="button"
-            onClick={() => navigate(actionLink)}
-            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-700"
-          >
-            {actionLabel}
-            <ExternalLink className="h-4 w-4" />
-          </button>
+          <CardFooter>
+            <Button onClick={() => navigate(actionLink)}>
+              {actionLabel}
+              <ExternalLink />
+            </Button>
+          </CardFooter>
         )}
-      </article>
+      </Card>
     </div>
   );
 }

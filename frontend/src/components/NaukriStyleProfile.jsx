@@ -1,1167 +1,817 @@
-import { useEffect, useState, useMemo } from 'react';
-
-import api, { unwrap } from '../services/api';
-
-import { useAuth } from '../context/AuthContext';
-
-import toast from 'react-hot-toast';
-
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { MapPin, Phone, Mail, Pencil, FileText, Loader2, KeyRound } from 'lucide-react';
+import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
-
-  User, MapPin, Phone, Mail, Pencil, Plus, X, GraduationCap,
-
-  Briefcase, FileText, Building2, Upload, Trash2,
-
-} from 'lucide-react';
-
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
+import api, { unwrap } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import YearMonthPicker from './YearMonthPicker';
 import ProfileAvatar from './ProfileAvatar';
-import PasswordInput from './ui/PasswordInput';
-
+import ResumeUploadBox from './ResumeUploadBox';
+import PasswordInput from './common/PasswordInput';
+import ConfirmDialog from './common/ConfirmDialog';
+import LoadingSpinner from './LoadingSpinner';
 import {
-
   defaultEducation, emptyInternship, emptyEmployment, parseJsonField,
-
 } from '../utils/profileDefaults';
-
-import { validateProfile, validateYear, validateYearRange, validateUrl } from '../utils/validation';
-
-
+import {
+  validateProfile, validateYear, validateYearRange, validateUrl, validatePassword,
+} from '../utils/validation';
 
 const MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-
-
 const QUICK_LINKS = [
-
   { id: 'personal', label: 'Personal info' },
-
   { id: 'education', label: 'Education' },
-
   { id: 'skills', label: 'Key skills' },
-
   { id: 'internships', label: 'Internships' },
-
   { id: 'employment', label: 'Employment' },
-
   { id: 'resume', label: 'Resume' },
-
   { id: 'password', label: 'Password' },
-
 ];
 
+const EDUCATION_LEVELS = [
+  { key: 'college', label: 'College' },
+  { key: 'intermediate', label: 'Intermediate' },
+  { key: 'school', label: 'School' },
+];
 
+const PERSONAL_FIELDS = [
+  ['fullName', 'Full Name'], ['phone', 'Phone'], ['location', 'Location'],
+  ['currentTitle', 'Current / Desired Title'], ['headline', 'Professional headline'], ['email', 'Email'],
+];
+
+const RECRUITER_FIELDS = [
+  ['fullName', 'Full Name'], ['email', 'Email'], ['phone', 'Phone'], ['location', 'Location'],
+  ['recruiterTitle', 'Your Role / Title'], ['companyName', 'Company Name'],
+  ['companyWebsite', 'Company Website'],
+];
 
 function formatMonthYear(month, year) {
-
   if (!month && !year) return '';
-
   const m = month ? MONTH_NAMES[Number(month)] || month : '';
-
   return [m, year].filter(Boolean).join(' ');
-
 }
-
-
 
 function calcCompletion(profile, education, internships, employment) {
-
   const checks = [
-
     profile.fullName, profile.phone, profile.location, profile.email,
-
     profile.currentTitle, profile.skills,
-
     education.college?.collegeName, education.college?.course,
-
     internships.some((i) => i.companyName),
-
     employment.some((e) => e.companyName),
-
     profile.resumeUrl,
-
     profile.profilePictureUrl,
-
   ];
-
   const filled = checks.filter(Boolean).length;
-
   return Math.round((filled / checks.length) * 100);
-
 }
 
-
-
-function SectionCard({ id, title, onAdd, addLabel = 'Add', children }) {
-
-  return (
-
-    <section id={id} className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-
-      <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
-
-        <h2 className="text-lg font-semibold">{title}</h2>
-
-        {onAdd && (
-
-          <button type="button" onClick={onAdd} className="text-sm font-semibold text-primary-600 hover:underline">
-
-            {addLabel}
-
-          </button>
-
-        )}
-
-      </div>
-
-      <div className="mt-4">{children}</div>
-
-    </section>
-
-  );
-
+function validateState({ profile, education, internships }, isAdmin) {
+  const errors = validateProfile(profile, isAdmin);
+  if (!isAdmin) {
+    EDUCATION_LEVELS.forEach(({ key }) => {
+      const e = education[key];
+      if (!e) return;
+      const err = validateYear(e.startYear, `${key} start year`)
+        || validateYear(e.endYear, `${key} end year`)
+        || validateYearRange(e.startYear, e.endYear);
+      if (err) errors[`edu_${key}`] = err;
+    });
+    internships.forEach((item, i) => {
+      const urlErr = validateUrl(item.projectUrl);
+      if (urlErr) errors[`intern_${i}`] = urlErr;
+      if (item.description?.length > 1000) errors[`intern_${i}`] = 'Internship description max 1000 characters';
+    });
+  }
+  return errors;
 }
 
-
-
-function Modal({ title, subtitle, onClose, onSave, onDelete, children, wide }) {
-
+function Field({ id, label, className, children }) {
   return (
-
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-
-      <div
-
-        className={`max-h-[90vh] w-full overflow-y-auto rounded-2xl bg-white shadow-2xl dark:bg-slate-900 ${wide ? 'max-w-2xl' : 'max-w-lg'}`}
-
-        onClick={(e) => e.stopPropagation()}
-
-      >
-
-        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-100 bg-white px-6 py-4 dark:border-slate-800 dark:bg-slate-900">
-
-          <div>
-
-            <h3 className="text-xl font-bold">{title}</h3>
-
-            {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
-
-          </div>
-
-          <button onClick={onClose} className="rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800">
-
-            <X className="h-5 w-5" />
-
-          </button>
-
-        </div>
-
-        <div className="px-6 py-5">{children}</div>
-
-        <div className="sticky bottom-0 flex items-center justify-between border-t border-slate-100 bg-white px-6 py-4 dark:border-slate-800 dark:bg-slate-900">
-
-          {onDelete ? (
-
-            <button type="button" onClick={onDelete} className="text-sm font-medium text-red-600 hover:underline">Delete</button>
-
-          ) : <span />}
-
-          <div className="flex gap-3">
-
-            <button type="button" onClick={onClose} className="rounded-lg border px-5 py-2 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800">Cancel</button>
-
-            <button type="button" onClick={onSave} className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-medium text-white hover:bg-primary-700">Save</button>
-
-          </div>
-
-        </div>
-
-      </div>
-
+    <div className={cn('space-y-2', className)}>
+      <Label htmlFor={id} className="text-xs text-muted-foreground">{label}</Label>
+      {children}
     </div>
-
   );
-
 }
 
+function SectionCard({ id, title, description, onAdd, addLabel = 'Add', children }) {
+  return (
+    <Card id={id} className="scroll-mt-36">
+      <CardHeader className="border-b [.border-b]:pb-4">
+        <CardTitle className="text-lg">{title}</CardTitle>
+        {description && <CardDescription>{description}</CardDescription>}
+        {onAdd && (
+          <CardAction>
+            <Button type="button" variant="link" size="sm" className="h-auto px-0" onClick={onAdd}>{addLabel}</Button>
+          </CardAction>
+        )}
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
 
+function EntryRow({ title, subtitle, meta, onEdit, editLabel }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b py-4 first:pt-0 last:border-0 last:pb-0">
+      <div className="min-w-0">
+        <p className="font-semibold">{title}</p>
+        {subtitle && <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>}
+        {meta && <p className="mt-1 text-xs text-muted-foreground">{meta}</p>}
+      </div>
+      <Button type="button" variant="ghost" size="icon-sm" className="text-muted-foreground" onClick={onEdit} aria-label={editLabel}>
+        <Pencil />
+      </Button>
+    </div>
+  );
+}
+
+function EditDialog({ title, subtitle, wide, onClose, onSave, onDelete, deleteLabel, children }) {
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
+      <DialogContent className={cn('flex max-h-[90vh] flex-col gap-0 p-0', wide ? 'sm:max-w-2xl' : 'sm:max-w-lg')}>
+        <DialogHeader className="border-b px-6 py-4">
+          <DialogTitle className="text-xl">{title}</DialogTitle>
+          <DialogDescription className={subtitle ? undefined : 'sr-only'}>{subtitle || title}</DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto px-6 py-5">{children}</div>
+        <DialogFooter className="border-t px-6 py-4 sm:justify-between">
+          {onDelete ? (
+            <ConfirmDialog
+              trigger={<Button type="button" variant="ghost" className="text-destructive hover:text-destructive" disabled={saving}>Delete</Button>}
+              title={deleteLabel || 'Delete this entry?'}
+              description="This can't be undone."
+              confirmLabel="Delete"
+              destructive
+              onConfirm={onDelete}
+            />
+          ) : <span />}
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+            <Button type="button" onClick={handleSave} disabled={saving}>
+              {saving && <Loader2 className="animate-spin" />}
+              Save
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ChangePasswordCard() {
+  const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '' });
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const passErr = validatePassword(passwords.newPassword);
+    if (passErr) {
+      toast.error(passErr);
+      return;
+    }
+    if (passwords.newPassword === passwords.currentPassword) {
+      toast.error('New password must be different from your current password');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.put('/api/users/me/password', passwords);
+      toast.success('Password changed');
+      setPasswords({ currentPassword: '', newPassword: '' });
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to change password');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <SectionCard id="password" title="Change Password">
+      <form onSubmit={submit} className="max-w-md space-y-4">
+        <Field id="current-password" label="Current password">
+          <PasswordInput
+            id="current-password"
+            value={passwords.currentPassword}
+            onChange={(e) => setPasswords((p) => ({ ...p, currentPassword: e.target.value }))}
+            autoComplete="current-password"
+            required
+          />
+        </Field>
+        <Field id="new-password" label="New password">
+          <PasswordInput
+            id="new-password"
+            value={passwords.newPassword}
+            onChange={(e) => setPasswords((p) => ({ ...p, newPassword: e.target.value }))}
+            autoComplete="new-password"
+            required
+          />
+        </Field>
+        <Button type="submit" variant="secondary" disabled={submitting}>
+          {submitting ? <Loader2 className="animate-spin" /> : <KeyRound />}
+          Update Password
+        </Button>
+      </form>
+    </SectionCard>
+  );
+}
+
+function CompletionRing({ value, children }) {
+  return (
+    <div className="relative flex size-24 shrink-0 items-center justify-center">
+      <svg className="absolute inset-0 size-24 -rotate-90" viewBox="0 0 100 100" aria-hidden="true">
+        <circle cx="50" cy="50" r="42" fill="none" stroke="var(--muted)" strokeWidth="8" />
+        <circle
+          cx="50" cy="50" r="42" fill="none" stroke="#16a34a" strokeWidth="8"
+          strokeDasharray={`${value * 2.64} 264`} strokeLinecap="round"
+          className="transition-[stroke-dasharray] duration-500"
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">{children}</div>
+      <span className="absolute -bottom-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">
+        {value}%
+      </span>
+    </div>
+  );
+}
+
+function ContactLine({ profile }) {
+  return (
+    <div className="mt-4 flex flex-wrap gap-4 text-sm text-muted-foreground">
+      {profile.location && <span className="flex items-center gap-1"><MapPin className="size-4" />{profile.location}</span>}
+      {profile.phone && <span className="flex items-center gap-1"><Phone className="size-4" />{profile.phone}</span>}
+      {profile.email && <span className="flex items-center gap-1 break-all"><Mail className="size-4 shrink-0" />{profile.email}</span>}
+    </div>
+  );
+}
 
 export default function NaukriStyleProfile() {
-
-  const { user, isAdmin, refreshUser } = useAuth();
-
+  const { isAdmin, refreshUser } = useAuth();
+  const [loaded, setLoaded] = useState(false);
   const [profile, setProfile] = useState({});
-
   const [education, setEducation] = useState(defaultEducation());
-
   const [internships, setInternships] = useState([]);
-
   const [employment, setEmployment] = useState([]);
-
-  const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '' });
-
   const [activeSection, setActiveSection] = useState('personal');
-
   const [editModal, setEditModal] = useState(null);
-
   const [draft, setDraft] = useState(null);
-
   const [avatarUploading, setAvatarUploading] = useState(false);
-
-
+  const [resumeUploading, setResumeUploading] = useState(false);
+  const [savingSection, setSavingSection] = useState(false);
 
   const completion = useMemo(
-
     () => calcCompletion(profile, education, internships, employment),
-
     [profile, education, internships, employment]
-
   );
 
-
-
-  const load = async () => {
-
-    const data = unwrap(await api.get('/api/users/me'));
-
+  const applyProfile = useCallback((data) => {
     setProfile(data);
-
     setEducation(parseJsonField(data.educationProfile, defaultEducation()));
-
-    const ints = parseJsonField(data.internshipsProfile, []);
-
-    setInternships(ints);
-
-    const emps = parseJsonField(data.employmentProfile, []).map((item) => ({
-
+    setInternships(parseJsonField(data.internshipsProfile, []));
+    setEmployment(parseJsonField(data.employmentProfile, []).map((item) => ({
       ...item,
-
       isCurrent: item.isCurrent ?? !item.endYear,
+    })));
+    setLoaded(true);
+  }, []);
 
-    }));
+  const load = useCallback(async () => {
+    applyProfile(unwrap(await api.get('/api/users/me')));
+  }, [applyProfile]);
 
-    setEmployment(emps);
-
-  };
-
-
-
-  useEffect(() => { load(); }, []);
-
-
-
-  const validateBeforeSave = () => {
-    const errors = validateProfile(profile, isAdmin);
-    if (!isAdmin) {
-      ['school', 'intermediate', 'college'].forEach((level) => {
-        const e = education[level];
-        if (e) {
-          const sy = validateYear(e.startYear, `${level} start year`);
-          const ey = validateYear(e.endYear, `${level} end year`);
-          const yr = validateYearRange(e.startYear, e.endYear);
-          if (sy) errors[`edu_${level}`] = sy;
-          if (ey) errors[`edu_${level}`] = ey;
-          if (yr) errors[`edu_${level}`] = yr;
-        }
+  useEffect(() => {
+    api.get('/api/users/me')
+      .then((res) => applyProfile(unwrap(res)))
+      .catch(() => {
+        toast.error('Failed to load profile');
+        setLoaded(true);
       });
-      internships.forEach((item, i) => {
-        const urlErr = validateUrl(item.projectUrl);
-        if (urlErr) errors[`intern_${i}`] = urlErr;
-        if (item.description?.length > 1000) errors[`intern_${i}`] = 'Internship description max 1000 characters';
-      });
-    }
-    return errors;
-  };
+  }, [applyProfile]);
 
-  const saveAll = async (extra = {}) => {
-    const errors = validateBeforeSave();
+  /** Persists the full profile, with `next` overriding any slice being edited. Returns true on success. */
+  const saveAll = async (next = {}) => {
+    const state = {
+      profile: next.profile ?? profile,
+      education: next.education ?? education,
+      internships: next.internships ?? internships,
+      employment: next.employment ?? employment,
+    };
+    const errors = validateState(state, isAdmin);
     if (Object.keys(errors).length > 0) {
       toast.error(Object.values(errors)[0]);
-      return;
+      return false;
     }
-
-    await api.put('/api/users/me', {
-
-      fullName: profile.fullName,
-
-      phone: profile.phone,
-
-      location: profile.location,
-
-      bio: profile.bio,
-
-      skills: profile.skills,
-
-      currentTitle: profile.currentTitle,
-      headline: profile.headline,
-      openToWork: profile.openToWork,
-
-      companyName: profile.companyName,
-
-      companyWebsite: profile.companyWebsite,
-
-      companyDescription: profile.companyDescription,
-
-      recruiterTitle: profile.recruiterTitle,
-
-      educationProfile: JSON.stringify(education),
-
-      internshipsProfile: JSON.stringify(internships),
-
-      employmentProfile: JSON.stringify(employment),
-
-      ...extra,
-
-    });
-
-    await refreshUser();
-
-    await load();
-
-    toast.success('Profile saved');
-
+    const p = state.profile;
+    try {
+      await api.put('/api/users/me', {
+        fullName: p.fullName,
+        phone: p.phone,
+        location: p.location,
+        bio: p.bio,
+        skills: p.skills,
+        currentTitle: p.currentTitle,
+        headline: p.headline,
+        openToWork: p.openToWork,
+        companyName: p.companyName,
+        companyWebsite: p.companyWebsite,
+        companyDescription: p.companyDescription,
+        recruiterTitle: p.recruiterTitle,
+        educationProfile: JSON.stringify(state.education),
+        internshipsProfile: JSON.stringify(state.internships),
+        employmentProfile: JSON.stringify(state.employment),
+      });
+      await Promise.allSettled([refreshUser(), load()]);
+      toast.success('Profile saved');
+      return true;
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save profile');
+      return false;
+    }
   };
 
+  const saveSection = async () => {
+    setSavingSection(true);
+    try {
+      await saveAll();
+    } finally {
+      setSavingSection(false);
+    }
+  };
 
+  const openEditor = (type, value) => {
+    setDraft(value);
+    setEditModal(type);
+  };
+
+  const closeEditor = () => {
+    setEditModal(null);
+    setDraft(null);
+  };
+
+  const saveAndClose = async (next) => {
+    if (await saveAll(next)) closeEditor();
+  };
 
   const uploadAvatar = async (file, validationError) => {
-
     if (validationError) {
-
       toast.error(validationError);
-
       return;
-
     }
-
     if (!file) return;
-
     const fd = new FormData();
-
     fd.append('file', file);
-
     setAvatarUploading(true);
-
     try {
-
       const res = await api.post('/api/users/me/avatar', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-
       const data = unwrap(res);
-
-      setProfile((p) => ({
-
-        ...p,
-
+      setProfile((prev) => ({
+        ...prev,
         profilePictureUrl: data.profilePictureUrl,
-
         profilePictureUploadedAt: data.profilePictureUploadedAt,
-
       }));
-
       await refreshUser();
-
       toast.success('Profile picture updated');
-
     } catch (err) {
-
       toast.error(err.response?.data?.message || 'Upload failed');
-
     } finally {
-
       setAvatarUploading(false);
-
     }
-
   };
-
-
 
   const uploadResume = async (e) => {
-
     const file = e.target.files?.[0];
-
+    if (e.target) e.target.value = '';
     if (!file) return;
-
-    const fd = new FormData();
-
-    fd.append('file', file);
-
-    try {
-
-      const res = await api.post('/api/users/me/resume', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-
-      const data = unwrap(res);
-
-      setProfile((p) => ({ ...p, resumeUrl: data.resumeUrl, resumeUploadedAt: data.resumeUploadedAt }));
-
-      await refreshUser();
-
-      toast.success('Resume uploaded');
-
-    } catch {
-
-      toast.error('Upload failed');
-
+    if (!/\.(pdf|docx?)$/i.test(file.name)) {
+      toast.error('Only PDF, DOC, or DOCX files are allowed');
+      return;
     }
-
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Resume must be under 10MB');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    setResumeUploading(true);
+    try {
+      const res = await api.post('/api/users/me/resume', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const data = unwrap(res);
+      setProfile((prev) => ({ ...prev, resumeUrl: data.resumeUrl, resumeUploadedAt: data.resumeUploadedAt }));
+      await refreshUser();
+      toast.success('Resume uploaded');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Upload failed');
+    } finally {
+      setResumeUploading(false);
+    }
   };
-
-
 
   const scrollTo = (id) => {
-
     setActiveSection(id);
-
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
   };
 
-
-
-  const skillTags = (profile.skills || '').split(',').map((s) => s.trim()).filter(Boolean);
-
-
-
-  const collegeLine = education.college?.course && education.college?.collegeName
-
-    ? `${education.college.course} from ${education.college.collegeName}`
-
-    : profile.currentTitle || 'Add your education';
-
-
+  if (!loaded) return <LoadingSpinner fullScreen />;
 
   if (isAdmin) {
-
     return (
       <RecruiterProfile
         profile={profile}
         setProfile={setProfile}
-        saveAll={saveAll}
-        passwords={passwords}
-        setPasswords={setPasswords}
+        onSave={saveSection}
+        saving={savingSection}
         onUploadAvatar={uploadAvatar}
         avatarUploading={avatarUploading}
       />
     );
-
   }
 
-
+  const skillTags = (profile.skills || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const collegeLine = education.college?.course && education.college?.collegeName
+    ? `${education.college.course} from ${education.college.collegeName}`
+    : profile.currentTitle || 'Add your education';
 
   return (
-
     <div className="space-y-6">
-
-      {/* Profile header card */}
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-
-        <div className="flex flex-wrap items-start gap-6">
-
-          <div className="relative flex h-24 w-24 shrink-0 items-center justify-center">
-
-            <svg className="absolute inset-0 h-24 w-24 -rotate-90" viewBox="0 0 100 100">
-
-              <circle cx="50" cy="50" r="42" fill="none" stroke="#e2e8f0" strokeWidth="8" />
-
-              <circle cx="50" cy="50" r="42" fill="none" stroke="#16a34a" strokeWidth="8"
-
-                strokeDasharray={`${completion * 2.64} 264`} strokeLinecap="round" />
-
-            </svg>
-
-            <div className="absolute inset-0 flex items-center justify-center">
-
-              <ProfileAvatar
-                url={profile.profilePictureUrl}
-                onUpload={uploadAvatar}
-                uploading={avatarUploading}
-                size="md"
-                variant="user"
-              />
-
-            </div>
-
-            <span className="absolute -bottom-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">{completion}%</span>
-
-          </div>
-
+      <Card>
+        <CardContent className="flex flex-wrap items-start gap-6">
+          <CompletionRing value={completion}>
+            <ProfileAvatar
+              url={profile.profilePictureUrl}
+              onUpload={uploadAvatar}
+              uploading={avatarUploading}
+              size="md"
+              variant="user"
+            />
+          </CompletionRing>
           <div className="min-w-0 flex-1">
-
-            <div className="flex items-center gap-2">
-
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-bold">{profile.fullName || 'Your Name'}</h1>
-
-              <button type="button" onClick={() => scrollTo('personal')} className="text-slate-400 hover:text-primary-600"><Pencil className="h-4 w-4" /></button>
-
+              <Button type="button" variant="ghost" size="icon-sm" className="text-muted-foreground" onClick={() => scrollTo('personal')} aria-label="Edit personal info">
+                <Pencil />
+              </Button>
+              {profile.openToWork && (
+                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Open to work</Badge>
+              )}
             </div>
-
-            <p className="mt-1 text-slate-600 dark:text-slate-300">{collegeLine}</p>
-
-            <div className="mt-4 flex flex-wrap gap-4 text-sm text-slate-500">
-
-              {profile.location && <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{profile.location}</span>}
-
-              {profile.phone && <span className="flex items-center gap-1"><Phone className="h-4 w-4" />{profile.phone}</span>}
-
-              {profile.email && <span className="flex items-center gap-1"><Mail className="h-4 w-4" />{profile.email}</span>}
-
-            </div>
-
+            <p className="mt-1 text-muted-foreground">{collegeLine}</p>
+            <ContactLine profile={profile} />
           </div>
-
-        </div>
-
-      </div>
-
-
-
-      {/* View & Edit tab bar */}
-
-      <div className="border-b border-slate-200 dark:border-slate-800">
-
-        <span className="inline-block border-b-2 border-primary-600 px-4 py-3 text-sm font-semibold text-primary-600">View &amp; Edit</span>
-
-      </div>
-
-
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
-
-        {/* Quick links sidebar */}
-
-        <nav className="lg:sticky lg:top-24 lg:self-start">
-
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Quick links</p>
-
-          <ul className="space-y-1 rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-900">
-
+        <nav aria-label="Profile sections" className="lg:sticky lg:top-36 lg:self-start">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quick links</p>
+          <ul className="flex gap-1 overflow-x-auto rounded-xl border bg-card p-2 lg:flex-col">
             {QUICK_LINKS.map((link) => (
-
-              <li key={link.id}>
-
+              <li key={link.id} className="shrink-0">
                 <button
-
                   type="button"
-
                   onClick={() => scrollTo(link.id)}
-
-                  className={`block w-full rounded-lg px-3 py-2 text-left text-sm transition ${
-
+                  aria-current={activeSection === link.id ? 'true' : undefined}
+                  className={cn(
+                    'block w-full whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm transition-colors',
                     activeSection === link.id
-
-                      ? 'bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/20'
-
-                      : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
-
-                  }`}
-
+                      ? 'bg-accent font-medium text-accent-foreground'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  )}
                 >
-
                   {link.label}
-
                 </button>
-
               </li>
-
             ))}
-
           </ul>
-
         </nav>
 
-
-
-        {/* Main sections */}
-
         <div className="space-y-6">
-
           <SectionCard id="personal" title="Personal information">
-
             <div className="grid gap-4 sm:grid-cols-2">
-
-              {[
-
-                ['fullName', 'Full Name'], ['phone', 'Phone'], ['location', 'Location'],
-
-                ['currentTitle', 'Current / Desired Title'], ['headline', 'Professional headline'], ['email', 'Email'],
-
-              ].map(([key, label]) => (
-
-                <div key={key}>
-
-                  <label className="text-xs font-medium text-slate-500">{label}</label>
-
-                  <input
-
+              {PERSONAL_FIELDS.map(([key, label]) => (
+                <Field key={key} id={`profile-${key}`} label={label}>
+                  <Input
+                    id={`profile-${key}`}
                     value={profile[key] || ''}
-
                     onChange={(e) => setProfile({ ...profile, [key]: e.target.value })}
-
                     disabled={key === 'email'}
-
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900"
-
                   />
-
-                </div>
-
+                </Field>
               ))}
-
-              <div className="sm:col-span-2">
-
-                <label className="text-xs font-medium text-slate-500">Profile summary</label>
-
-                <textarea value={profile.bio || ''} onChange={(e) => setProfile({ ...profile, bio: e.target.value })} rows={3} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" placeholder="Brief summary about yourself..." />
-
+              <Field id="profile-bio" label="Profile summary" className="sm:col-span-2">
+                <Textarea
+                  id="profile-bio"
+                  value={profile.bio || ''}
+                  onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
+                  rows={3}
+                  placeholder="Brief summary about yourself..."
+                />
+              </Field>
+              <div className="flex items-center justify-between gap-4 rounded-xl border bg-muted/40 px-4 py-3 sm:col-span-2">
+                <div>
+                  <Label htmlFor="profile-open-to-work" className="text-sm font-medium">Open to work</Label>
+                  <p className="text-xs text-muted-foreground">Let recruiters know you&apos;re actively looking</p>
+                </div>
+                <Switch
+                  id="profile-open-to-work"
+                  checked={!!profile.openToWork}
+                  onCheckedChange={(checked) => setProfile({ ...profile, openToWork: checked })}
+                />
               </div>
+            </div>
+            <Button type="button" className="mt-4" onClick={saveSection} disabled={savingSection}>
+              {savingSection && <Loader2 className="animate-spin" />}
+              Save
+            </Button>
+          </SectionCard>
 
-              {!isAdmin && (
-                <div className="sm:col-span-2 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/50">
-                  <div>
-                    <p className="text-sm font-medium">Open to work</p>
-                    <p className="text-xs text-slate-500">Let recruiters know you&apos;re actively looking</p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={!!profile.openToWork}
-                    onClick={() => setProfile({ ...profile, openToWork: !profile.openToWork })}
-                    className={`relative h-7 w-12 rounded-full transition ${profile.openToWork ? 'bg-primary-600' : 'bg-slate-300 dark:bg-slate-600'}`}
-                  >
-                    <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition ${profile.openToWork ? 'left-5' : 'left-0.5'}`} />
-                  </button>
+          <SectionCard id="education" title="Education" onAdd={() => openEditor('education', { ...education })}>
+            {EDUCATION_LEVELS.map(({ key, label }) => {
+              const e = education[key];
+              if (!e?.collegeName && !e?.course) return null;
+              return (
+                <EntryRow
+                  key={key}
+                  title={<>{e.course || label} {e.collegeName && `from ${e.collegeName}`}</>}
+                  subtitle={[e.specialization, e.grades && `Scored ${e.grades}`, e.endYear && `Passed out in ${e.endYear}`].filter(Boolean).join(' · ')}
+                  onEdit={() => openEditor('education', { ...education })}
+                  editLabel={`Edit ${label}`}
+                />
+              );
+            })}
+            {!education.college?.collegeName && !education.intermediate?.collegeName && !education.school?.collegeName && (
+              <p className="text-sm text-muted-foreground">Add your school, intermediate, and college details.</p>
+            )}
+          </SectionCard>
+
+          <SectionCard id="skills" title="Key skills" onAdd={() => openEditor('skills', { skills: profile.skills || '' })} addLabel="Edit">
+            {skillTags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {skillTags.map((s) => (
+                  <Badge key={s} variant="outline" className="bg-muted/50 px-3 py-1.5 text-sm">{s}</Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Add skills like Java, React, Spring Boot...</p>
+            )}
+          </SectionCard>
+
+          <SectionCard id="internships" title="Internships" onAdd={() => openEditor('internship', { ...emptyInternship(), _idx: -1 })}>
+            {internships.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Show your professional learnings — add internship experience.</p>
+            ) : internships.map((item, idx) => (
+              <EntryRow
+                key={idx}
+                title={item.companyName}
+                subtitle={item.projectName}
+                meta={`${formatMonthYear(item.startMonth, item.startYear)} – ${formatMonthYear(item.endMonth, item.endYear)}`}
+                onEdit={() => openEditor('internship', { ...item, _idx: idx })}
+                editLabel={`Edit internship at ${item.companyName}`}
+              />
+            ))}
+          </SectionCard>
+
+          <SectionCard id="employment" title="Employment" onAdd={() => openEditor('employment', { ...emptyEmployment(), _idx: -1 })}>
+            {employment.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Talk about the company you worked at, your designation and what you did.</p>
+            ) : employment.map((item, idx) => (
+              <EntryRow
+                key={idx}
+                title={`${item.designation || 'Role'} at ${item.companyName}`}
+                subtitle={item.experienceYears || item.experienceMonths
+                  ? `${item.experienceYears || 0} yr ${item.experienceMonths || 0} mo`
+                  : formatMonthYear(item.startMonth, item.startYear) + (item.isCurrent || !item.endYear ? ' – Present' : ` – ${formatMonthYear(item.endMonth, item.endYear)}`)}
+                onEdit={() => openEditor('employment', { ...item, _idx: idx })}
+                editLabel={`Edit employment at ${item.companyName}`}
+              />
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            id="resume"
+            title="Resume"
+            description="Your resume is the first impression you make on potential employers. Craft it carefully."
+          >
+            {profile.resumeUrl && (
+              <div className="mb-4 flex items-center gap-3 rounded-xl border p-4">
+                <FileText className="size-8 shrink-0 text-primary" />
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{profile.resumeUrl.split('/').pop()}</p>
+                  {profile.resumeUploadedAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Uploaded on {new Date(profile.resumeUploadedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className={cn('relative', resumeUploading && 'pointer-events-none opacity-60')}>
+              <ResumeUploadBox compact label={null} onUpload={uploadResume} />
+              {resumeUploading && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Loader2 className="size-8 animate-spin text-primary" />
                 </div>
               )}
-
             </div>
-
-            <button type="button" onClick={() => saveAll()} className="mt-4 rounded-lg bg-primary-600 px-5 py-2 text-sm font-medium text-white hover:bg-primary-700">Save</button>
-
           </SectionCard>
 
-
-
-          <SectionCard id="education" title="Education" onAdd={() => { setDraft({ ...education }); setEditModal('education'); }}>
-
-            {['college', 'intermediate', 'school'].map((level) => {
-
-              const e = education[level];
-
-              if (!e?.collegeName && !e?.course) return null;
-
-              const label = level === 'college' ? 'College' : level === 'intermediate' ? 'Intermediate' : 'School';
-
-              return (
-
-                <div key={level} className="flex items-start justify-between border-b border-slate-100 py-4 last:border-0 dark:border-slate-800">
-
-                  <div>
-
-                    <p className="font-semibold">{e.course || label} {e.collegeName && `from ${e.collegeName}`}</p>
-
-                    <p className="mt-1 text-sm text-slate-500">
-
-                      {[e.specialization, e.grades && `Scored ${e.grades}`, e.endYear && `Passed out in ${e.endYear}`].filter(Boolean).join(' · ')}
-
-                    </p>
-
-                  </div>
-
-                  <button type="button" onClick={() => { setDraft({ ...education }); setEditModal('education'); }} className="text-slate-400 hover:text-primary-600"><Pencil className="h-4 w-4" /></button>
-
-                </div>
-
-              );
-
-            })}
-
-            {!education.college?.collegeName && !education.school?.collegeName && (
-
-              <p className="text-sm text-slate-500">Add your school, intermediate, and college details.</p>
-
-            )}
-
-          </SectionCard>
-
-
-
-          <SectionCard id="skills" title="Key skills" onAdd={() => { setDraft({ skills: profile.skills || '' }); setEditModal('skills'); }} addLabel="Edit">
-
-            {skillTags.length > 0 ? (
-
-              <div className="flex flex-wrap gap-2">
-
-                {skillTags.map((s) => (
-
-                  <span key={s} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium dark:border-slate-700 dark:bg-slate-800">{s}</span>
-
-                ))}
-
-              </div>
-
-            ) : (
-
-              <p className="text-sm text-slate-500">Add skills like Java, React, Spring Boot...</p>
-
-            )}
-
-          </SectionCard>
-
-
-
-          <SectionCard id="internships" title="Internships" onAdd={() => { setDraft({ ...emptyInternship(), _idx: -1 }); setEditModal('internship'); }}>
-
-            {internships.length === 0 ? (
-
-              <p className="text-sm text-slate-500">Show your professional learnings — add internship experience.</p>
-
-            ) : internships.map((item, idx) => (
-
-              <div key={idx} className="flex items-start justify-between border-b border-slate-100 py-4 last:border-0 dark:border-slate-800">
-
-                <div>
-
-                  <p className="font-semibold">{item.companyName}</p>
-
-                  <p className="text-sm text-slate-500">{item.projectName}</p>
-
-                  <p className="mt-1 text-xs text-slate-400">
-
-                    {formatMonthYear(item.startMonth, item.startYear)} – {formatMonthYear(item.endMonth, item.endYear)}
-
-                  </p>
-
-                </div>
-
-                <button type="button" onClick={() => { setDraft({ ...item, _idx: idx }); setEditModal('internship'); }} className="text-slate-400 hover:text-primary-600"><Pencil className="h-4 w-4" /></button>
-
-              </div>
-
-            ))}
-
-          </SectionCard>
-
-
-
-          <SectionCard id="employment" title="Employment" onAdd={() => { setDraft({ ...emptyEmployment(), _idx: -1 }); setEditModal('employment'); }}>
-
-            {employment.length === 0 ? (
-
-              <p className="text-sm text-slate-500">Talk about the company you worked at, your designation and what you did.</p>
-
-            ) : employment.map((item, idx) => (
-
-              <div key={idx} className="flex items-start justify-between border-b border-slate-100 py-4 last:border-0 dark:border-slate-800">
-
-                <div>
-
-                  <p className="font-semibold">{item.designation || 'Role'} at {item.companyName}</p>
-
-                  <p className="mt-1 text-sm text-slate-500">
-
-                    {item.experienceYears || item.experienceMonths
-
-                      ? `${item.experienceYears || 0} yr ${item.experienceMonths || 0} mo`
-
-                      : formatMonthYear(item.startMonth, item.startYear) + (item.isCurrent || !item.endYear ? ' – Present' : ` – ${formatMonthYear(item.endMonth, item.endYear)}`)}
-
-                  </p>
-
-                </div>
-
-                <button type="button" onClick={() => { setDraft({ ...item, _idx: idx }); setEditModal('employment'); }} className="text-slate-400 hover:text-primary-600"><Pencil className="h-4 w-4" /></button>
-
-              </div>
-
-            ))}
-
-          </SectionCard>
-
-
-
-          <section id="resume" className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-
-            <h2 className="text-lg font-semibold">Resume</h2>
-
-            <p className="mt-1 text-sm text-slate-500">Your resume is the first impression you make on potential employers. Craft it carefully.</p>
-
-            {profile.resumeUrl && (
-
-              <div className="mt-4 flex items-center justify-between rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-
-                <div className="flex items-center gap-3">
-
-                  <FileText className="h-8 w-8 text-primary-600" />
-
-                  <div>
-
-                    <p className="font-medium">{profile.resumeUrl.split('/').pop()}</p>
-
-                    {profile.resumeUploadedAt && (
-
-                      <p className="text-xs text-slate-500">Uploaded on {new Date(profile.resumeUploadedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-
-                    )}
-
-                  </div>
-
-                </div>
-
-              </div>
-
-            )}
-
-            <label className="group mt-4 block cursor-pointer rounded-2xl border-2 border-dashed border-primary-300 bg-primary-50/40 p-0 text-center shadow-inner transition hover:border-primary-500 hover:bg-primary-50 dark:border-primary-700 dark:bg-primary-950/20 dark:hover:border-primary-500">
-              <div className="flex flex-col items-center px-6 py-12">
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-primary-200 bg-white shadow-sm group-hover:scale-105 transition dark:border-primary-800 dark:bg-slate-900">
-                  <Upload className="h-8 w-8 text-primary-600" />
-                </div>
-                <p className="mt-4 text-base font-semibold text-primary-700 dark:text-primary-400">
-                  {profile.resumeUrl ? 'Click to update resume' : 'Click to choose resume file'}
-                </p>
-                <p className="mt-2 text-sm text-slate-500">or drag and drop your file here</p>
-                <p className="mt-3 rounded-full bg-white px-4 py-1.5 text-xs font-medium text-slate-600 shadow-sm dark:bg-slate-800 dark:text-slate-300">
-                  Supported: PDF, DOC, DOCX · Max 10MB
-                </p>
-              </div>
-              <input type="file" accept=".pdf,.doc,.docx" onChange={uploadResume} className="hidden" />
-            </label>
-
-          </section>
-
-
-
-          <section id="password" className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-
-            <h2 className="text-lg font-semibold">Change Password</h2>
-
-            <form onSubmit={async (e) => {
-
-              e.preventDefault();
-
-              if (passwords.newPassword === passwords.currentPassword) {
-
-                toast.error('New password must be different from your current password');
-
-                return;
-
-              }
-
-              try {
-
-                await api.put('/api/users/me/password', passwords);
-
-                toast.success('Password changed');
-
-                setPasswords({ currentPassword: '', newPassword: '' });
-
-              } catch (err) {
-
-                toast.error(err.response?.data?.message || 'Failed');
-
-              }
-
-            }} className="mt-4 space-y-3">
-
-              <PasswordInput placeholder="Current password" value={passwords.currentPassword} onChange={(e) => setPasswords({ ...passwords, currentPassword: e.target.value })} autoComplete="current-password" required />
-
-              <PasswordInput placeholder="New password" value={passwords.newPassword} onChange={(e) => setPasswords({ ...passwords, newPassword: e.target.value })} autoComplete="new-password" required />
-
-              <button type="submit" className="rounded-lg bg-slate-800 px-5 py-2 text-sm font-medium text-white dark:bg-slate-700">Update Password</button>
-
-            </form>
-
-          </section>
-
+          <ChangePasswordCard />
         </div>
-
       </div>
 
-
-
-      {/* Education modal */}
-
       {editModal === 'education' && draft && (
-
-        <Modal title="Education" subtitle="Add your academic details" wide onClose={() => setEditModal(null)}
-
-          onSave={async () => { setEducation(draft); setEditModal(null); await saveAll({ educationProfile: JSON.stringify(draft) }); }}>
-
-          {['college', 'intermediate', 'school'].map((level) => {
-
-            const label = level === 'college' ? 'College' : level === 'intermediate' ? 'Intermediate' : 'School';
-
-            const d = draft[level] || {};
-
-            const setLevel = (field, val) => setDraft({ ...draft, [level]: { ...d, [field]: val } });
-
-            return (
-
-              <div key={level} className="mb-6 space-y-3 rounded-xl border border-slate-100 p-4 dark:border-slate-700">
-
-                <h4 className="font-semibold text-primary-700 dark:text-primary-400">{label}</h4>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-
-                  <div><label className="text-xs text-slate-500">Course</label><input value={d.course || ''} onChange={(e) => setLevel('course', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" /></div>
-
-                  <div><label className="text-xs text-slate-500">College / School Name</label><input value={d.collegeName || ''} onChange={(e) => setLevel('collegeName', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" /></div>
-
-                  <div><label className="text-xs text-slate-500">Specialization</label><input value={d.specialization || ''} onChange={(e) => setLevel('specialization', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" /></div>
-
-                  <div><label className="text-xs text-slate-500">Grades</label><input value={d.grades || ''} onChange={(e) => setLevel('grades', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" /></div>
-
-                  <div><label className="text-xs text-slate-500">Start Year</label><input type="number" value={d.startYear || ''} onChange={(e) => setLevel('startYear', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" /></div>
-
-                  <div><label className="text-xs text-slate-500">End Year</label><input type="number" value={d.endYear || ''} onChange={(e) => setLevel('endYear', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" /></div>
-
-                </div>
-
-              </div>
-
-            );
-
-          })}
-
-        </Modal>
-
+        <EditDialog
+          title="Education"
+          subtitle="Add your academic details"
+          wide
+          onClose={closeEditor}
+          onSave={() => saveAndClose({ education: draft })}
+        >
+          <div className="space-y-6">
+            {EDUCATION_LEVELS.map(({ key, label }) => {
+              const d = draft[key] || {};
+              const setLevel = (field, val) => setDraft({ ...draft, [key]: { ...d, [field]: val } });
+              const fid = (f) => `edu-${key}-${f}`;
+              return (
+                <fieldset key={key} className="space-y-3 rounded-xl border p-4">
+                  <legend className="px-1 font-semibold text-primary">{label}</legend>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field id={fid('course')} label="Course"><Input id={fid('course')} value={d.course || ''} onChange={(e) => setLevel('course', e.target.value)} /></Field>
+                    <Field id={fid('name')} label="College / School Name"><Input id={fid('name')} value={d.collegeName || ''} onChange={(e) => setLevel('collegeName', e.target.value)} /></Field>
+                    <Field id={fid('spec')} label="Specialization"><Input id={fid('spec')} value={d.specialization || ''} onChange={(e) => setLevel('specialization', e.target.value)} /></Field>
+                    <Field id={fid('grades')} label="Grades"><Input id={fid('grades')} value={d.grades || ''} onChange={(e) => setLevel('grades', e.target.value)} /></Field>
+                    <Field id={fid('start')} label="Start Year"><Input id={fid('start')} type="number" inputMode="numeric" value={d.startYear || ''} onChange={(e) => setLevel('startYear', e.target.value)} /></Field>
+                    <Field id={fid('end')} label="End Year"><Input id={fid('end')} type="number" inputMode="numeric" value={d.endYear || ''} onChange={(e) => setLevel('endYear', e.target.value)} /></Field>
+                  </div>
+                </fieldset>
+              );
+            })}
+          </div>
+        </EditDialog>
       )}
-
-
-
-      {/* Skills modal */}
 
       {editModal === 'skills' && draft && (
-
-        <Modal title="Key skills" onClose={() => setEditModal(null)}
-
-          onSave={async () => { setProfile({ ...profile, skills: draft.skills }); setEditModal(null); await saveAll({ skills: draft.skills }); }}>
-
-          <textarea value={draft.skills} onChange={(e) => setDraft({ skills: e.target.value })} rows={4} placeholder="Java, React, Spring Boot (comma separated)" className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" />
-
-        </Modal>
-
+        <EditDialog
+          title="Key skills"
+          subtitle="Comma separated, up to 30 skills"
+          onClose={closeEditor}
+          onSave={() => saveAndClose({ profile: { ...profile, skills: draft.skills } })}
+        >
+          <Label htmlFor="skills-editor" className="sr-only">Key skills</Label>
+          <Textarea
+            id="skills-editor"
+            value={draft.skills}
+            onChange={(e) => setDraft({ skills: e.target.value })}
+            rows={4}
+            placeholder="Java, React, Spring Boot (comma separated)"
+          />
+        </EditDialog>
       )}
-
-
-
-      {/* Internship modal */}
 
       {editModal === 'internship' && draft && (
-
-        <Modal title="Internships" subtitle="Show your professional learnings" wide onClose={() => setEditModal(null)}
-
-          onDelete={draft._idx >= 0 ? async () => {
-
-            const next = internships.filter((_, i) => i !== draft._idx);
-
-            setInternships(next); setEditModal(null);
-
-            await saveAll({ internshipsProfile: JSON.stringify(next) });
-
-          } : undefined}
-
-          onSave={async () => {
-
+        <EditDialog
+          title="Internships"
+          subtitle="Show your professional learnings"
+          wide
+          onClose={closeEditor}
+          deleteLabel="Delete this internship?"
+          onDelete={draft._idx >= 0 ? () => saveAndClose({ internships: internships.filter((_, i) => i !== draft._idx) }) : undefined}
+          onSave={() => {
             const { _idx, ...item } = draft;
-
             const next = _idx >= 0 ? internships.map((x, i) => (i === _idx ? item : x)) : [...internships, item];
-
-            setInternships(next); setEditModal(null);
-
-            await saveAll({ internshipsProfile: JSON.stringify(next) });
-
-          }}>
-
+            return saveAndClose({ internships: next });
+          }}
+        >
           <div className="space-y-4">
-
-            <div><label className="text-sm font-medium">Company name</label><input value={draft.companyName || ''} onChange={(e) => setDraft({ ...draft, companyName: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" /></div>
-
-            <div>
-
-              <label className="text-sm font-medium">Internship duration</label>
-
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-
-                <YearMonthPicker month={draft.startMonth} year={draft.startYear} onMonthChange={(v) => setDraft({ ...draft, startMonth: v })} onYearChange={(v) => setDraft({ ...draft, startYear: v })} />
-
-                <span className="text-slate-400">to</span>
-
-                <YearMonthPicker month={draft.endMonth} year={draft.endYear} onMonthChange={(v) => setDraft({ ...draft, endMonth: v })} onYearChange={(v) => setDraft({ ...draft, endYear: v })} />
-
+            <Field id="intern-company" label="Company name">
+              <Input id="intern-company" value={draft.companyName || ''} onChange={(e) => setDraft({ ...draft, companyName: e.target.value })} />
+            </Field>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Internship duration</p>
+              <div className="grid items-end gap-2 sm:grid-cols-[1fr_auto_1fr]">
+                <YearMonthPicker label="Start" month={draft.startMonth} year={draft.startYear} onMonthChange={(v) => setDraft({ ...draft, startMonth: v })} onYearChange={(v) => setDraft({ ...draft, startYear: v })} />
+                <span className="hidden pb-2 text-muted-foreground sm:block">to</span>
+                <YearMonthPicker label="End" month={draft.endMonth} year={draft.endYear} onMonthChange={(v) => setDraft({ ...draft, endMonth: v })} onYearChange={(v) => setDraft({ ...draft, endYear: v })} />
               </div>
-
             </div>
-
-            <div><label className="text-sm font-medium">Project name</label><input value={draft.projectName || ''} onChange={(e) => setDraft({ ...draft, projectName: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" /></div>
-
-            <div>
-
-              <label className="text-sm font-medium">Describe what you did at internship</label>
-
-              <textarea value={draft.description || ''} onChange={(e) => setDraft({ ...draft, description: e.target.value.slice(0, 1000) })} rows={6} maxLength={1000} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" />
-
-              <p className="mt-1 text-right text-xs text-slate-400">{(draft.description || '').length}/1000</p>
-
-            </div>
-
-            <div><label className="text-sm font-medium">Key Skills <span className="text-slate-400">(optional)</span></label><input value={draft.keySkills || ''} onChange={(e) => setDraft({ ...draft, keySkills: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" /></div>
-
-            <div><label className="text-sm font-medium">Project URL <span className="text-slate-400">(optional)</span></label><input value={draft.projectUrl || ''} onChange={(e) => setDraft({ ...draft, projectUrl: e.target.value })} placeholder="https://" className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" /></div>
-
+            <Field id="intern-project" label="Project name">
+              <Input id="intern-project" value={draft.projectName || ''} onChange={(e) => setDraft({ ...draft, projectName: e.target.value })} />
+            </Field>
+            <Field id="intern-description" label="Describe what you did at internship">
+              <Textarea
+                id="intern-description"
+                value={draft.description || ''}
+                onChange={(e) => setDraft({ ...draft, description: e.target.value.slice(0, 1000) })}
+                rows={6}
+                maxLength={1000}
+              />
+              <p className="text-right text-xs text-muted-foreground">{(draft.description || '').length}/1000</p>
+            </Field>
+            <Field id="intern-skills" label="Key Skills (optional)">
+              <Input id="intern-skills" value={draft.keySkills || ''} onChange={(e) => setDraft({ ...draft, keySkills: e.target.value })} />
+            </Field>
+            <Field id="intern-url" label="Project URL (optional)">
+              <Input id="intern-url" type="url" value={draft.projectUrl || ''} onChange={(e) => setDraft({ ...draft, projectUrl: e.target.value })} placeholder="https://" />
+            </Field>
           </div>
-
-        </Modal>
-
+        </EditDialog>
       )}
-
-
-
-      {/* Employment modal */}
 
       {editModal === 'employment' && draft && (
-
-        <Modal title="Employment" subtitle="Add your work experience" wide onClose={() => setEditModal(null)}
-
-          onDelete={draft._idx >= 0 ? async () => {
-
-            const next = employment.filter((_, i) => i !== draft._idx);
-
-            setEmployment(next); setEditModal(null);
-
-            await saveAll({ employmentProfile: JSON.stringify(next) });
-
-          } : undefined}
-
-          onSave={async () => {
-
+        <EditDialog
+          title="Employment"
+          subtitle="Add your work experience"
+          wide
+          onClose={closeEditor}
+          deleteLabel="Delete this employment entry?"
+          onDelete={draft._idx >= 0 ? () => saveAndClose({ employment: employment.filter((_, i) => i !== draft._idx) }) : undefined}
+          onSave={() => {
             const { _idx, ...item } = draft;
-
             const next = _idx >= 0 ? employment.map((x, i) => (i === _idx ? item : x)) : [...employment, item];
-
-            setEmployment(next); setEditModal(null);
-
-            await saveAll({ employmentProfile: JSON.stringify(next) });
-
-          }}>
-
+            return saveAndClose({ employment: next });
+          }}
+        >
           <div className="space-y-4">
-
-            <div><label className="text-sm font-medium">Company name</label><input value={draft.companyName || ''} onChange={(e) => setDraft({ ...draft, companyName: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" /></div>
-
+            <Field id="emp-company" label="Company name">
+              <Input id="emp-company" value={draft.companyName || ''} onChange={(e) => setDraft({ ...draft, companyName: e.target.value })} />
+            </Field>
             <div className="grid gap-3 sm:grid-cols-2">
-
-              <div><label className="text-sm font-medium">Total experience (Years)</label><input type="number" min="0" value={draft.experienceYears || ''} onChange={(e) => setDraft({ ...draft, experienceYears: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" /></div>
-
-              <div><label className="text-sm font-medium">Total experience (Months)</label><input type="number" min="0" max="11" value={draft.experienceMonths || ''} onChange={(e) => setDraft({ ...draft, experienceMonths: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" /></div>
-
+              <Field id="emp-years" label="Total experience (Years)">
+                <Input id="emp-years" type="number" min="0" value={draft.experienceYears || ''} onChange={(e) => setDraft({ ...draft, experienceYears: e.target.value })} />
+              </Field>
+              <Field id="emp-months" label="Total experience (Months)">
+                <Input id="emp-months" type="number" min="0" max="11" value={draft.experienceMonths || ''} onChange={(e) => setDraft({ ...draft, experienceMonths: e.target.value })} />
+              </Field>
             </div>
-
-            <div><label className="text-sm font-medium">Designation</label><input value={draft.designation || ''} onChange={(e) => setDraft({ ...draft, designation: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" /></div>
-
-            <div>
-
-              <label className="text-sm font-medium">Work duration</label>
-
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-
+            <Field id="emp-designation" label="Designation">
+              <Input id="emp-designation" value={draft.designation || ''} onChange={(e) => setDraft({ ...draft, designation: e.target.value })} />
+            </Field>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Work duration</p>
+              <div className="grid items-end gap-2 sm:grid-cols-[1fr_auto_1fr]">
                 <YearMonthPicker label="Start" month={draft.startMonth} year={draft.startYear} onMonthChange={(v) => setDraft({ ...draft, startMonth: v })} onYearChange={(v) => setDraft({ ...draft, startYear: v })} />
-
-                <span className="text-slate-400">to</span>
-
+                <span className="hidden pb-2 text-muted-foreground sm:block">to</span>
                 {draft.isCurrent ? (
-
-                  <span className="rounded-lg border border-primary-200 bg-primary-50 px-4 py-2 text-sm font-medium text-primary-700 dark:border-primary-800 dark:bg-primary-950/30 dark:text-primary-400">Present</span>
-
+                  <div className="flex h-9 items-center rounded-md border border-primary/30 bg-accent px-4 text-sm font-medium text-accent-foreground">Present</div>
                 ) : (
-
                   <YearMonthPicker label="End" month={draft.endMonth} year={draft.endYear} onMonthChange={(v) => setDraft({ ...draft, endMonth: v })} onYearChange={(v) => setDraft({ ...draft, endYear: v })} />
-
                 )}
-
               </div>
-
-              <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-
-                <input
-
-                  type="checkbox"
-
+              <div className="flex items-center gap-2 pt-1">
+                <Checkbox
+                  id="emp-current"
                   checked={!!draft.isCurrent}
-
-                  onChange={(e) => {
-
-                    const isCurrent = e.target.checked;
-
+                  onCheckedChange={(checked) => {
+                    const isCurrent = checked === true;
                     const now = new Date();
-
                     setDraft({
-
                       ...draft,
-
                       isCurrent,
-
                       endMonth: isCurrent ? String(now.getMonth() + 1) : '',
-
                       endYear: isCurrent ? String(now.getFullYear()) : '',
-
                     });
-
                   }}
-
-                  className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-
                 />
-
-                I currently work here
-
-              </label>
-
+                <Label htmlFor="emp-current" className="font-normal text-muted-foreground">I currently work here</Label>
+              </div>
             </div>
-
-            <div>
-
-              <label className="text-sm font-medium">Describe the work you did</label>
-
-              <textarea value={draft.description || ''} onChange={(e) => setDraft({ ...draft, description: e.target.value })} rows={5} className="mt-1 w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" />
-
-            </div>
-
+            <Field id="emp-description" label="Describe the work you did">
+              <Textarea id="emp-description" value={draft.description || ''} onChange={(e) => setDraft({ ...draft, description: e.target.value })} rows={5} />
+            </Field>
           </div>
-
-        </Modal>
-
+        </EditDialog>
       )}
-
     </div>
-
   );
-
 }
 
-
-
-function RecruiterProfile({ profile, setProfile, saveAll, passwords, setPasswords, onUploadAvatar, avatarUploading }) {
-
-  const fields = [
-
-    ['fullName', 'Full Name'], ['email', 'Email'], ['phone', 'Phone'], ['location', 'Location'],
-
-    ['recruiterTitle', 'Your Role / Title'], ['companyName', 'Company Name'],
-
-    ['companyWebsite', 'Company Website'],
-
-  ];
-
+function RecruiterProfile({ profile, setProfile, onSave, saving, onUploadAvatar, avatarUploading }) {
   return (
-
     <div className="space-y-6">
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-
-        <div className="flex items-center gap-4">
-
+      <Card>
+        <CardContent className="flex items-center gap-4">
           <ProfileAvatar
             url={profile.profilePictureUrl}
             onUpload={onUploadAvatar}
@@ -1169,110 +819,43 @@ function RecruiterProfile({ profile, setProfile, saveAll, passwords, setPassword
             size="md"
             variant="admin"
           />
-
           <div className="min-w-0 flex-1">
-
             <h1 className="text-2xl font-bold">{profile.fullName}</h1>
-
-            <p className="text-slate-500">{profile.recruiterTitle} · {profile.companyName}</p>
-
-            <div className="mt-4 flex flex-wrap gap-4 text-sm text-slate-500">
-
-              {profile.location && <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{profile.location}</span>}
-
-              {profile.phone && <span className="flex items-center gap-1"><Phone className="h-4 w-4" />{profile.phone}</span>}
-
-              {profile.email && <span className="flex items-center gap-1"><Mail className="h-4 w-4" />{profile.email}</span>}
-
-            </div>
-
+            <p className="text-muted-foreground">{[profile.recruiterTitle, profile.companyName].filter(Boolean).join(' · ')}</p>
+            <ContactLine profile={profile} />
           </div>
-
-        </div>
-
-      </div>
+        </CardContent>
+      </Card>
 
       <SectionCard id="personal" title="Recruiter & Company Information">
-
         <div className="grid gap-4 sm:grid-cols-2">
-
-          {fields.map(([key, label]) => (
-
-            <div key={key} className={key === 'companyWebsite' ? 'sm:col-span-2' : ''}>
-
-              <label className="text-xs font-medium text-slate-500">{label}</label>
-
-              <input
+          {RECRUITER_FIELDS.map(([key, label]) => (
+            <Field key={key} id={`recruiter-${key}`} label={label} className={key === 'companyWebsite' ? 'sm:col-span-2' : undefined}>
+              <Input
+                id={`recruiter-${key}`}
+                type={key === 'companyWebsite' ? 'url' : 'text'}
                 value={profile[key] || ''}
                 onChange={(e) => setProfile({ ...profile, [key]: e.target.value })}
                 disabled={key === 'email'}
-                className="mt-1 w-full rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900"
               />
-
-            </div>
-
+            </Field>
           ))}
-
-          <div className="sm:col-span-2">
-
-            <label className="text-xs font-medium text-slate-500">About Company</label>
-
-            <textarea value={profile.companyDescription || ''} onChange={(e) => setProfile({ ...profile, companyDescription: e.target.value })} rows={4} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-
-          </div>
-
+          <Field id="recruiter-company-description" label="About Company" className="sm:col-span-2">
+            <Textarea
+              id="recruiter-company-description"
+              value={profile.companyDescription || ''}
+              onChange={(e) => setProfile({ ...profile, companyDescription: e.target.value })}
+              rows={4}
+            />
+          </Field>
         </div>
-
-        <button type="button" onClick={() => saveAll()} className="mt-4 rounded-lg bg-primary-600 px-5 py-2 text-sm font-medium text-white hover:bg-primary-700">Save</button>
-
+        <Button type="button" className="mt-4" onClick={onSave} disabled={saving}>
+          {saving && <Loader2 className="animate-spin" />}
+          Save
+        </Button>
       </SectionCard>
 
-      <section id="password" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-
-        <h2 className="text-lg font-semibold">Change Password</h2>
-
-        <form onSubmit={async (e) => {
-
-          e.preventDefault();
-
-          if (passwords.newPassword === passwords.currentPassword) {
-
-            toast.error('New password must be different from your current password');
-
-            return;
-
-          }
-
-          try {
-
-            await api.put('/api/users/me/password', passwords);
-
-            toast.success('Password changed');
-
-            setPasswords({ currentPassword: '', newPassword: '' });
-
-          } catch (err) {
-
-            toast.error(err.response?.data?.message || 'Failed');
-
-          }
-
-        }} className="mt-4 space-y-3">
-
-          <PasswordInput placeholder="Current password" value={passwords.currentPassword} onChange={(e) => setPasswords({ ...passwords, currentPassword: e.target.value })} autoComplete="current-password" required />
-
-          <PasswordInput placeholder="New password" value={passwords.newPassword} onChange={(e) => setPasswords({ ...passwords, newPassword: e.target.value })} autoComplete="new-password" required />
-
-          <button type="submit" className="rounded-lg bg-slate-800 px-5 py-2 text-sm font-medium text-white dark:bg-slate-700">Update Password</button>
-
-        </form>
-
-      </section>
-
+      <ChangePasswordCard />
     </div>
-
   );
-
 }
-
-

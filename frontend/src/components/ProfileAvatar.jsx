@@ -1,9 +1,10 @@
 import { useRef } from 'react';
-import { Camera, User, Building2 } from 'lucide-react';
+import { Camera, User, Building2, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const SIZES = {
-  md: 'h-16 w-16',
-  lg: 'h-20 w-20',
+  md: 'size-16',
+  lg: 'size-20',
 };
 
 export default function ProfileAvatar({
@@ -40,16 +41,24 @@ export default function ProfileAvatar({
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={uploading}
-        className={`relative flex ${SIZES[size]} items-center justify-center overflow-hidden rounded-full border-2 border-white bg-primary-100 shadow-sm ring-2 ring-primary-200 transition hover:ring-primary-400 disabled:opacity-60 dark:border-slate-800 dark:bg-primary-900/30 dark:ring-primary-800 dark:hover:ring-primary-600`}
+        aria-label="Change profile picture"
         title="Change profile picture"
+        className={cn(
+          'relative flex items-center justify-center overflow-hidden rounded-full border-2 border-card bg-accent shadow-sm ring-2 ring-primary/20 transition hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-primary disabled:opacity-60',
+          SIZES[size]
+        )}
       >
         {url ? (
-          <img src={url} alt="Profile" className="h-full w-full object-cover" />
+          <img src={url} alt="Profile" className="size-full object-cover" />
         ) : (
-          <Icon className="h-8 w-8 text-primary-600" />
+          <Icon className="size-8 text-primary" />
         )}
         <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition group-hover:bg-black/40">
-          <Camera className="h-5 w-5 text-white opacity-0 transition group-hover:opacity-100" />
+          {uploading ? (
+            <Loader2 className="size-5 animate-spin text-white" />
+          ) : (
+            <Camera className="size-5 text-white opacity-0 transition group-hover:opacity-100" />
+          )}
         </span>
       </button>
       <input

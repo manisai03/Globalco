@@ -21,7 +21,11 @@ public class FileController {
     @GetMapping("/{subfolder}/{filename}")
     public ResponseEntity<Resource> getFile(@PathVariable String subfolder, @PathVariable String filename) {
         try {
-            Path filePath = Paths.get(uploadDir, subfolder, filename);
+            Path root = Paths.get(uploadDir).toAbsolutePath().normalize();
+            Path filePath = root.resolve(subfolder).resolve(filename).normalize();
+            if (!filePath.startsWith(root)) {
+                return ResponseEntity.notFound().build();
+            }
             Resource resource = new UrlResource(filePath.toUri());
             if (!resource.exists()) {
                 return ResponseEntity.notFound().build();

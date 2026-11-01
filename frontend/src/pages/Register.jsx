@@ -1,14 +1,33 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Briefcase, Building2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 import api, { unwrap } from '../services/api';
-import PasswordInput from '../components/ui/PasswordInput';
-import toast from 'react-hot-toast';
+import AuthShell from '../components/common/AuthShell';
+import PasswordInput from '../components/common/PasswordInput';
 import { validateRegister } from '../utils/validation';
 import { getApiErrorMessage } from '../utils/apiError';
 import { normalizeEmail, normalizePhone, trimFormFields } from '../utils/normalize';
-import { Briefcase, Building2 } from 'lucide-react';
 
-const authInputClass = 'rounded-xl border border-slate-300 px-4 py-3 text-base dark:border-slate-700 dark:bg-slate-900';
+const ACCOUNT_TYPES = [
+  { value: 'CANDIDATE', label: "I'm a Candidate", icon: Briefcase },
+  { value: 'RECRUITER', label: "I'm a Recruiter", icon: Building2 },
+];
+
+function SectionHeading({ children }) {
+  return (
+    <div className="flex items-center gap-3 pt-2">
+      <h2 className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{children}</h2>
+      <Separator className="flex-1" />
+    </div>
+  );
+}
 
 export default function Register() {
   const navigate = useNavigate();
@@ -46,71 +65,78 @@ export default function Register() {
     }
   };
 
-  const field = (name, label, opts = {}) => (
-    <div key={name}>
-      <label className="block text-sm font-medium">{label}{opts.required && ' *'}</label>
-      {opts.textarea ? (
-        <textarea
-          value={form[name]}
-          onChange={(e) => setForm({ ...form, [name]: e.target.value })}
-          rows={opts.rows || 3}
-          required={opts.required}
-          placeholder={opts.placeholder}
-          className={`mt-1 w-full ${authInputClass}`}
-        />
-      ) : (
-        <input
-          type={opts.type || 'text'}
-          value={form[name]}
-          onChange={(e) => setForm({ ...form, [name]: e.target.value })}
-          required={opts.required}
-          placeholder={opts.placeholder}
-          autoComplete={opts.autoComplete}
-          autoCapitalize={opts.autoCapitalize}
-          inputMode={opts.inputMode}
-          className={`mt-1 w-full ${authInputClass}`}
-        />
-      )}
-    </div>
-  );
+  const field = (name, label, opts = {}) => {
+    const id = `register-${name}`;
+    const common = {
+      id,
+      value: form[name],
+      onChange: (e) => setForm({ ...form, [name]: e.target.value }),
+      required: opts.required,
+      placeholder: opts.placeholder,
+    };
+    return (
+      <div key={name} className="space-y-2">
+        <Label htmlFor={id}>{label}{opts.required && <span className="text-destructive">*</span>}</Label>
+        {opts.textarea ? (
+          <Textarea {...common} rows={opts.rows || 3} />
+        ) : (
+          <Input
+            {...common}
+            type={opts.type || 'text'}
+            autoComplete={opts.autoComplete}
+            autoCapitalize={opts.autoCapitalize}
+            inputMode={opts.inputMode}
+            className="h-11"
+          />
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-lg flex-col justify-center px-4 py-12">
-      <h1 className="text-3xl font-bold">Create account</h1>
-      <p className="mt-2 text-slate-500">Create a candidate or recruiter account</p>
-
-      <div className="mt-6 grid grid-cols-2 gap-3">
-        <button
-          type="button"
-          onClick={() => setAccountType('CANDIDATE')}
-          className={`flex items-center justify-center gap-2 rounded-xl border-2 p-4 text-sm font-medium transition ${
-            !isRecruiter ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20' : 'border-slate-200 dark:border-slate-700'
-          }`}
-        >
-          <Briefcase className="h-5 w-5" /> I'm a Candidate
-        </button>
-        <button
-          type="button"
-          onClick={() => setAccountType('RECRUITER')}
-          className={`flex items-center justify-center gap-2 rounded-xl border-2 p-4 text-sm font-medium transition ${
-            isRecruiter ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20' : 'border-slate-200 dark:border-slate-700'
-          }`}
-        >
-          <Building2 className="h-5 w-5" /> I'm a Recruiter
-        </button>
+    <AuthShell
+      title="Create account"
+      description="Create a candidate or recruiter account"
+      className="max-w-lg"
+      footer={
+        <p>
+          Have an account?{' '}
+          <Link to="/login" className="font-medium text-primary hover:underline">Sign in</Link>
+        </p>
+      }
+    >
+      <div role="radiogroup" aria-label="Account type" className="grid grid-cols-2 gap-3">
+        {ACCOUNT_TYPES.map(({ value, label, icon: Icon }) => {
+          const selected = accountType === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => setAccountType(value)}
+              className={cn(
+                'flex items-center justify-center gap-2 rounded-xl border-2 p-4 text-sm font-medium transition outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                selected ? 'border-primary bg-accent text-accent-foreground' : 'border-border hover:bg-muted'
+              )}
+            >
+              <Icon className="size-5" /> {label}
+            </button>
+          );
+        })}
       </div>
 
-      <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Account Details</h2>
-        {field('fullName', 'Full Name', { required: true })}
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <SectionHeading>Account Details</SectionHeading>
+        {field('fullName', 'Full Name', { required: true, autoComplete: 'name' })}
         {field('email', 'Email', { type: 'email', required: true, autoComplete: 'email', autoCapitalize: 'none', inputMode: 'email' })}
-        <div>
-          <label className="block text-sm font-medium">Password *</label>
+        <div className="space-y-2">
+          <Label htmlFor="register-password">Password<span className="text-destructive">*</span></Label>
           <PasswordInput
+            id="register-password"
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
-            wrapperClassName="mt-1"
-            className={authInputClass}
+            className="h-11"
             required
             autoComplete="new-password"
           />
@@ -120,7 +146,7 @@ export default function Register() {
 
         {isRecruiter ? (
           <>
-            <h2 className="pt-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Company Information</h2>
+            <SectionHeading>Company Information</SectionHeading>
             {field('companyName', 'Company Name', { required: true, placeholder: 'e.g. XPO, Xceed Technologies' })}
             {field('recruiterTitle', 'Your Role / Title', { required: true, placeholder: 'HR Manager, Talent Lead' })}
             {field('companyWebsite', 'Company Website', { placeholder: 'https://company.com' })}
@@ -128,20 +154,17 @@ export default function Register() {
           </>
         ) : (
           <>
-            <h2 className="pt-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Professional Info</h2>
+            <SectionHeading>Professional Info</SectionHeading>
             {field('currentTitle', 'Current / Desired Job Title', { placeholder: 'Software Engineer' })}
             {field('skills', 'Key Skills', { textarea: true, placeholder: 'Java, React, MySQL (comma separated)' })}
           </>
         )}
 
-        <button type="submit" disabled={loading} className="w-full rounded-xl bg-primary-600 py-3 font-semibold text-white hover:bg-primary-700 disabled:opacity-50">
+        <Button type="submit" disabled={loading} className="h-11 w-full text-base">
+          {loading && <Loader2 className="animate-spin" />}
           {loading ? 'Creating...' : isRecruiter ? 'Register as Recruiter' : 'Register as Candidate'}
-        </button>
+        </Button>
       </form>
-
-      <p className="mt-6 text-center text-sm text-slate-500">
-        Have an account? <Link to="/login" className="font-medium text-primary-600">Sign in</Link>
-      </p>
-    </div>
+    </AuthShell>
   );
 }

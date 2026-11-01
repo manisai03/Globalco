@@ -82,3 +82,7 @@ spring:
       ddl-auto: update
     show-sql: false
     database-platform: org.hibernate.dialect.MySQLDialect
+app:
+  jwt:
+    # No fallback in production: startup fails if JWT_SECRET is missing instead of signing with a public default.
+    secret: ${JWT_SECRET}

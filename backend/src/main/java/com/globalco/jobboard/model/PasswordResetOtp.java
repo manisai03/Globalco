@@ -31,6 +31,10 @@ public class PasswordResetOtp {
     @Builder.Default
     private boolean used = false;
 
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "INT NOT NULL DEFAULT 0")
+    private int failedAttempts = 0;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;

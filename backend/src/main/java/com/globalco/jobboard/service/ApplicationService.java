@@ -24,10 +24,19 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class ApplicationService {
+
+    static final String STATUS_PENDING = "PENDING";
+    static final String STATUS_INTERVIEW_SCHEDULED = "INTERVIEW_SCHEDULED";
+    static final String STATUS_WITHDRAWN = "WITHDRAWN";
+    static final List<String> RECRUITER_STATUSES =
+            List.of(STATUS_PENDING, "SHORTLISTED", STATUS_INTERVIEW_SCHEDULED, "REJECTED", "HIRED");
+    private static final Set<String> WITHDRAWABLE_STATUSES =
+            Set.of(STATUS_PENDING, "SHORTLISTED", STATUS_INTERVIEW_SCHEDULED);
 
     private final ApplicationRepository applicationRepository;
     private final JobRepository jobRepository;
@@ -45,28 +54,35 @@ public class ApplicationService {
         if (!"OPEN".equals(job.getStatus())) {
             throw new BadRequestException("This job is no longer accepting applications");
         }
-        if (applicationRepository.existsByJobIdAndUserId(jobId, user.getId())) {
+        Application application = applicationRepository.findByJobIdAndUserId(jobId, user.getId()).orElse(null);
+        if (application != null && !STATUS_WITHDRAWN.equals(application.getStatus())) {
             throw new BadRequestException("You have already applied for this job");
         }
 
         String resumeUrl = user.getResumeUrl();
         if (resume != null && !resume.isEmpty()) {
-            resumeUrl = fileStorageService.store(resume, "resumes");
+            resumeUrl = fileStorageService.store(resume, "resumes", FileStorageService.RESUME_EXTENSIONS);
             user.setResumeUrl(resumeUrl);
             userRepository.save(user);
         }
 
-        long applicantCount = applicationRepository.count();
+        long applicantCount = applicationRepository.countByJobId(jobId);
         var matchBreakdown = aiService.calculateMatchBreakdown(job, user, applicantCount);
         int matchScore = matchBreakdown.getOverallScore();
+        String coverLetter = request != null ? request.getCoverLetter() : null;
 
-        Application application = Application.builder()
-                .job(job)
-                .user(user)
-                .resumeUrl(resumeUrl)
-                .coverLetter(request != null ? request.getCoverLetter() : null)
-                .matchScore(matchScore)
-                .build();
+        if (application == null) {
+            application = Application.builder()
+                    .job(job)
+                    .user(user)
+                    .build();
+        }
+        // The (job_id, user_id) unique constraint means a withdrawn application is reopened, not duplicated.
+        application.setResumeUrl(resumeUrl);
+        application.setCoverLetter(coverLetter);
+        application.setMatchScore(matchScore);
+        application.setStatus(STATUS_PENDING);
+        application.setRecruiterViewed(false);
 
         Application saved = applicationRepository.save(application);
 
@@ -94,12 +110,6 @@ public class ApplicationService {
                 .toList();
     }
 
-    public List<ApplicationResponse> getJobApplicants(Long jobId) {
-        return applicationRepository.findByJobIdOrderByCreatedAtDesc(jobId).stream()
-                .map(EntityMapper::toApplicationResponse)
-                .toList();
-    }
-
     public List<ApplicationResponse> getAllApplicants(Admin admin) {
         return applicationRepository.findByJobCreatedByIdOrderByCreatedAtDesc(admin.getId()).stream()
                 .map(app -> EntityMapper.toApplicationResponse(app, true))
@@ -124,7 +134,7 @@ public class ApplicationService {
             applicationRepository.save(app);
         }
 
-        long jobApplicantCount = applicationRepository.findByJobIdOrderByCreatedAtDesc(app.getJob().getId()).size();
+        long jobApplicantCount = applicationRepository.countByJobId(app.getJob().getId());
         var matchBreakdown = aiService.calculateMatchBreakdown(app.getJob(), app.getUser(), jobApplicantCount);
         return EntityMapper.toApplicationDetailResponse(app, matchBreakdown);
     }
@@ -134,6 +144,10 @@ public class ApplicationService {
         Application app = applicationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found"));
         assertJobOwner(app.getJob(), admin);
+        if (status == null || !RECRUITER_STATUSES.contains(status)) {
+            throw new BadRequestException("Invalid status. Allowed: " + String.join(", ", RECRUITER_STATUSES));
+        }
+        assertNotWithdrawn(app);
 
         app.setStatus(status);
         Application saved = applicationRepository.save(app);
@@ -152,7 +166,10 @@ public class ApplicationService {
         if (!app.getUser().getId().equals(user.getId())) {
             throw new BadRequestException("Not authorized");
         }
-        app.setStatus("WITHDRAWN");
+        if (!WITHDRAWABLE_STATUSES.contains(app.getStatus())) {
+            throw new BadRequestException("This application can no longer be withdrawn");
+        }
+        app.setStatus(STATUS_WITHDRAWN);
         applicationRepository.save(app);
     }
 
@@ -161,6 +178,7 @@ public class ApplicationService {
         Application app = applicationRepository.findById(request.getApplicationId())
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found"));
         assertJobOwner(app.getJob(), admin);
+        assertNotWithdrawn(app);
 
         Interview interview = Interview.builder()
                 .application(app)
@@ -170,7 +188,7 @@ public class ApplicationService {
                 .build();
         interviewRepository.save(interview);
 
-        app.setStatus("INTERVIEW_SCHEDULED");
+        app.setStatus(STATUS_INTERVIEW_SCHEDULED);
         applicationRepository.save(app);
 
         notificationService.create(app.getUser(), "Interview Scheduled",
@@ -181,6 +199,12 @@ public class ApplicationService {
     private void assertJobOwner(Job job, Admin admin) {
         if (job.getCreatedBy() == null || !job.getCreatedBy().getId().equals(admin.getId())) {
             throw new BadRequestException("You can only manage applicants for your own job postings");
+        }
+    }
+
+    private void assertNotWithdrawn(Application app) {
+        if (STATUS_WITHDRAWN.equals(app.getStatus())) {
+            throw new BadRequestException("The candidate has withdrawn this application");
         }
     }
 }

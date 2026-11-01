@@ -1,8 +1,11 @@
 name: Deploy
 
 # Globalco Assessment — Auto-deploy to Render (backend) + Vercel (frontend)
+# Runs only after the CI workflow succeeds on main/master, or when triggered manually.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main, master]
   workflow_dispatch:
 
@@ -10,7 +13,11 @@ jobs:
   deploy-backend:
     name: Deploy Backend to Render
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.event == 'push')
+      || (github.event_name == 'workflow_dispatch'
+        && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
     steps:
       - name: Trigger Render Deploy Hook
         run: |
@@ -26,9 +33,15 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend to Vercel
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.event == 'push')
+      || (github.event_name == 'workflow_dispatch'
+        && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Check Vercel secrets
         id: vercel

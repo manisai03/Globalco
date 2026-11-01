@@ -8,6 +8,7 @@ import com.globalco.jobboard.model.Admin;
 import com.globalco.jobboard.repository.ApplicationRepository;
 import com.globalco.jobboard.repository.JobRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -21,6 +22,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminService {
 
+    private static final List<String> STATUSES =
+            List.of("PENDING", "SHORTLISTED", "REJECTED", "INTERVIEW_SCHEDULED", "HIRED", "WITHDRAWN");
+
     private final JobRepository jobRepository;
     private final ApplicationRepository applicationRepository;
 
@@ -28,8 +32,7 @@ public class AdminService {
         Long adminId = admin.getId();
 
         List<ApplicationResponse> recent = applicationRepository
-                .findByJobCreatedByIdOrderByCreatedAtDesc(adminId).stream()
-                .limit(10)
+                .findRecentForAdmin(adminId, PageRequest.of(0, 10)).stream()
                 .map(app -> EntityMapper.toApplicationResponse(app, true))
                 .toList();
 
@@ -47,21 +50,22 @@ public class AdminService {
                         (a, b) -> a,
                         HashMap::new));
 
-        Map<String, Long> monthlyApps = new HashMap<>();
-        applicationRepository.countByMonth().forEach(row ->
-                monthlyApps.put("Month " + row[0], (Long) row[1]));
+        Map<String, Long> monthlyApps = new LinkedHashMap<>();
+        applicationRepository.countByMonthForAdmin(adminId).forEach(row ->
+                monthlyApps.put(String.format("%d-%02d", ((Number) row[0]).intValue(), ((Number) row[1]).intValue()),
+                        ((Number) row[2]).longValue()));
 
         Map<String, Long> statusAnalytics = new LinkedHashMap<>();
-        List.of("PENDING", "SHORTLISTED", "REJECTED", "INTERVIEW_SCHEDULED", "HIRED", "WITHDRAWN")
-                .forEach(status -> statusAnalytics.put(status,
-                        applicationRepository.countByJobCreatedByIdAndStatus(adminId, status)));
+        STATUSES.forEach(status -> statusAnalytics.put(status, 0L));
+        applicationRepository.countByStatusForAdmin(adminId).forEach(row ->
+                statusAnalytics.put((String) row[0], ((Number) row[1]).longValue()));
 
         return DashboardResponse.builder()
                 .totalJobs(jobRepository.countByCreatedById(adminId))
                 .totalApplications(applicationRepository.countByJobCreatedById(adminId))
                 .totalUsers(applicationRepository.countDistinctApplicantsByAdmin(adminId))
                 .openJobs(jobRepository.countByCreatedByIdAndStatus(adminId, "OPEN"))
-                .pendingApplications(applicationRepository.countByJobCreatedByIdAndStatus(adminId, "PENDING"))
+                .pendingApplications(statusAnalytics.getOrDefault("PENDING", 0L))
                 .recentApplications(recent)
                 .applicationsPerJob(appsPerJob)
                 .jobsByCategory(jobsByCategory)
@@ -76,8 +80,7 @@ public class AdminService {
         Long adminId = admin.getId();
 
         Map<String, Long> breakdown = new LinkedHashMap<>();
-        List.of("PENDING", "SHORTLISTED", "REJECTED", "INTERVIEW_SCHEDULED", "HIRED", "WITHDRAWN")
-                .forEach(status -> breakdown.put(status, 0L));
+        STATUSES.forEach(status -> breakdown.put(status, 0L));
 
         applicationRepository.countByStatusSinceForAdmin(adminId, since).forEach(row ->
                 breakdown.put((String) row[0], (Long) row[1]));

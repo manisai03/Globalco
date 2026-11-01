@@ -63,7 +63,7 @@ Response:
 ```json
 { "email": "user@example.com" }
 ```
-Sends 6-digit OTP (10-minute expiry) via Brevo.
+Sends 6-digit OTP (10-minute expiry) via Brevo. Always returns success, whether or not the email is registered. A new OTP is sent at most once per minute per email.
 
 ### POST /api/auth/reset-password
 ```json
@@ -73,6 +73,7 @@ Sends 6-digit OTP (10-minute expiry) via Brevo.
   "newPassword": "newpassword123"
 }
 ```
+After 5 incorrect attempts, the OTP is invalidated and a new one must be requested.
 
 ---
 
@@ -85,7 +86,6 @@ Sends 6-digit OTP (10-minute expiry) via Brevo.
 | POST | `/api/users/me/resume` | ✓ | Upload resume (multipart) |
 | POST | `/api/users/me/avatar` | ✓ | Upload avatar to Cloudinary |
 | PUT | `/api/users/me/password` | ✓ | Change password |
-| GET | `/api/users/{id}` | ✓ | Get user by ID |
 
 ---
 
@@ -106,7 +106,7 @@ Sends 6-digit OTP (10-minute expiry) via Brevo.
 | PATCH | `/api/jobs/{id}/reopen` | Admin | Reopen posting |
 
 ### Query parameters (GET /api/jobs)
-`search`, `location`, `jobType`, `experienceLevel`, `category`, `minSalary`, `maxSalary`, `status`, `sort`, `page` (default 0), `size` (default 12)
+`search`, `location`, `jobType`, `experienceLevel`, `category`, `minSalary`, `maxSalary`, `status`, `sort`, `page` (default 0), `size` (default 12, max 50)
 
 ---
 
@@ -119,11 +119,12 @@ Sends 6-digit OTP (10-minute expiry) via Brevo.
 | GET | `/api/applications/interviews/me` | ✓ | My scheduled interviews |
 | GET | `/api/applications/{id}` | ✓ | Application detail (+ match breakdown) |
 | DELETE | `/api/applications/{id}` | ✓ | Withdraw application |
-| GET | `/api/applications/jobs/{jobId}` | Admin | Applicants for a job |
 | PATCH | `/api/applications/{id}/status` | Admin | Update status |
 | POST | `/api/applications/interviews` | Admin | Schedule interview |
 
 **Status values:** `PENDING`, `SHORTLISTED`, `REJECTED`, `INTERVIEW_SCHEDULED`, `HIRED`, `WITHDRAWN`
+
+Recruiters can set any status except `WITHDRAWN`, and can't change an application the candidate has withdrawn. Candidates can withdraw only while the status is `PENDING`, `SHORTLISTED`, or `INTERVIEW_SCHEDULED`. Applying again after withdrawing reopens the same application as `PENDING`.
 
 ### PATCH /api/applications/{id}/status
 ```json

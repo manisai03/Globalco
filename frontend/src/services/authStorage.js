@@ -23,13 +23,6 @@ function write(store, key, value) {
   }
 }
 
-function activeStore() {
-  if (read(primary, 'token') || read(fallback, 'token')) {
-    return read(primary, 'token') ? primary : fallback;
-  }
-  return primary;
-}
-
 export const authStorage = {
   getToken() {
     return read(primary, 'token') || read(fallback, 'token');
@@ -42,7 +35,12 @@ export const authStorage = {
 
   getUser() {
     const raw = read(primary, 'user') || read(fallback, 'user');
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
   },
 
   setUser(user) {
@@ -72,7 +70,11 @@ export function migrateFromLocalStorage() {
   const legacyUser = localStorage.getItem('user');
   if (!authStorage.getToken() && legacyToken) {
     authStorage.setToken(legacyToken);
-    if (legacyUser) authStorage.setUser(JSON.parse(legacyUser));
+    if (legacyUser) {
+      try {
+        authStorage.setUser(JSON.parse(legacyUser));
+      } catch { /* ignore corrupt legacy data */ }
+    }
   }
   try {
     localStorage.removeItem('token');

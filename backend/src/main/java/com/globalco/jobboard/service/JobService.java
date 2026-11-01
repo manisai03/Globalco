@@ -28,6 +28,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class JobService {
 
+    private static final int MAX_PAGE_SIZE = 50;
+
     private final JobRepository jobRepository;
     private final SavedJobRepository savedJobRepository;
     private final ApplicationRepository applicationRepository;
@@ -41,14 +43,14 @@ public class JobService {
             String postedWithin, String sort, int page, int size, User currentUser) {
 
         Sort sorting = resolveSort(sort);
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         Page<Job> jobs = jobRepository.findAll(
                 JobSpecification.withFilters(search, location, jobType, experienceLevel,
                         category, minSalary, maxSalary, status != null ? status : "OPEN", postedWithin),
-                PageRequest.of(page, size, sorting));
+                PageRequest.of(safePage, safeSize, sorting));
 
-        List<JobResponse> content = jobs.getContent().stream()
-                .map(job -> mapWithUserContext(job, currentUser))
-                .toList();
+        List<JobResponse> content = mapWithUserContext(jobs.getContent(), currentUser);
 
         return PageResponse.<JobResponse>builder()
                 .content(content)
@@ -61,16 +63,15 @@ public class JobService {
 
     @Transactional(readOnly = true)
     public List<JobResponse> getFeaturedJobs(User currentUser) {
-        return jobRepository.findTop6ByFeaturedTrueAndStatusOrderByCreatedAtDesc("OPEN").stream()
-                .map(job -> mapWithUserContext(job, currentUser))
-                .toList();
+        return mapWithUserContext(
+                jobRepository.findTop6ByFeaturedTrueAndStatusOrderByCreatedAtDesc("OPEN"), currentUser);
     }
 
     @Transactional(readOnly = true)
     public JobResponse getJobById(Long id, User currentUser) {
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found"));
-        return mapWithUserContext(job, currentUser);
+        return mapWithUserContext(List.of(job), currentUser).get(0);
     }
 
     @Transactional(readOnly = true)
@@ -78,23 +79,22 @@ public class JobService {
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found"));
         String category = job.getCategory() != null ? job.getCategory() : "Engineering";
-        return jobRepository.findTop6ByCategoryAndStatusAndIdNotOrderByCreatedAtDesc(category, "OPEN", id).stream()
-                .map(j -> mapWithUserContext(j, currentUser))
-                .toList();
+        return mapWithUserContext(
+                jobRepository.findTop6ByCategoryAndStatusAndIdNotOrderByCreatedAtDesc(category, "OPEN", id), currentUser);
     }
 
     @Transactional(readOnly = true)
     public List<JobResponse> getRecommendedJobs(User currentUser) {
         List<Job> openJobs = jobRepository.findTop12ByStatusOrderByCreatedAtDesc("OPEN");
         if (currentUser == null || currentUser.getSkills() == null || currentUser.getSkills().isBlank()) {
-            return openJobs.stream().limit(6).map(j -> mapWithUserContext(j, null)).toList();
+            return mapWithUserContext(openJobs.stream().limit(6).toList(), currentUser);
         }
         Set<String> userSkills = parseSkillTokens(currentUser.getSkills());
-        return openJobs.stream()
+        List<Job> ranked = openJobs.stream()
                 .sorted((a, b) -> Integer.compare(skillOverlap(b, userSkills), skillOverlap(a, userSkills)))
                 .limit(6)
-                .map(j -> mapWithUserContext(j, currentUser))
                 .toList();
+        return mapWithUserContext(ranked, currentUser);
     }
 
     private static Set<String> parseSkillTokens(String skills) {
@@ -216,24 +216,33 @@ public class JobService {
         };
     }
 
-    private JobResponse mapWithUserContext(Job job, User currentUser) {
-        boolean saved = false;
-        boolean applied = false;
-
-        if (currentUser != null) {
-            saved = savedJobRepository.existsByUserIdAndJobId(currentUser.getId(), job.getId());
-            applied = applicationRepository.existsByJobIdAndUserId(job.getId(), currentUser.getId());
+    private List<JobResponse> mapWithUserContext(List<Job> jobs, User currentUser) {
+        if (jobs.isEmpty()) {
+            return List.of();
         }
+        List<Long> jobIds = jobs.stream().map(Job::getId).toList();
 
-        long applicantCount = applicationRepository.findByJobIdOrderByCreatedAtDesc(job.getId()).size();
-        JobResponse response = EntityMapper.toJobResponse(job, saved, applied);
-        response.setApplicantCount(applicantCount);
+        Map<Long, Long> applicantCounts = new HashMap<>();
+        applicationRepository.countByJobIds(jobIds).forEach(row ->
+                applicantCounts.put((Long) row[0], ((Number) row[1]).longValue()));
 
-        if (currentUser != null) {
-            response.setMatchPreview(aiService.calculateMatchBreakdown(job, currentUser, applicantCount));
-        }
+        Set<Long> savedIds = currentUser != null
+                ? new HashSet<>(savedJobRepository.findSavedJobIds(currentUser.getId(), jobIds))
+                : Set.of();
+        Set<Long> appliedIds = currentUser != null
+                ? new HashSet<>(applicationRepository.findAppliedJobIds(currentUser.getId(), jobIds))
+                : Set.of();
 
-        return response;
+        return jobs.stream().map(job -> {
+            long applicantCount = applicantCounts.getOrDefault(job.getId(), 0L);
+            JobResponse response = EntityMapper.toJobResponse(
+                    job, savedIds.contains(job.getId()), appliedIds.contains(job.getId()));
+            response.setApplicantCount(applicantCount);
+            if (currentUser != null) {
+                response.setMatchPreview(aiService.calculateMatchBreakdown(job, currentUser, applicantCount));
+            }
+            return response;
+        }).toList();
     }
 
     private Sort resolveSort(String sort) {

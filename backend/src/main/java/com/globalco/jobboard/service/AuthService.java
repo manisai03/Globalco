@@ -25,12 +25,17 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+
+    static final int MAX_OTP_ATTEMPTS = 5;
+    static final long OTP_RESEND_COOLDOWN_SECONDS = 60;
 
     private final UserRepository userRepository;
     private final AdminRepository adminRepository;
@@ -121,10 +126,21 @@ public class AuthService {
                 .build();
     }
 
+    /** Silently returns for unknown emails so the endpoint can't be used to discover registered accounts. */
     @Transactional
     public void sendPasswordResetOtp(ForgotPasswordRequest request) {
-        AuthenticatedAccount account = accountService.findByEmail(request.getEmail())
-                .orElseThrow(() -> new ResourceNotFoundException("No account found with this email"));
+        AuthenticatedAccount account = accountService.findByEmail(trim(request.getEmail())).orElse(null);
+        if (account == null) {
+            return;
+        }
+
+        boolean recentlySent = otpRepository.findTopByEmailAndUsedFalseOrderByCreatedAtDesc(account.getEmail())
+                .map(existing -> existing.getCreatedAt() != null
+                        && existing.getCreatedAt().isAfter(LocalDateTime.now().minusSeconds(OTP_RESEND_COOLDOWN_SECONDS)))
+                .orElse(false);
+        if (recentlySent) {
+            return;
+        }
 
         String otp = String.format("%06d", new SecureRandom().nextInt(1_000_000));
         PasswordResetOtp resetOtp = PasswordResetOtp.builder()
@@ -137,10 +153,10 @@ public class AuthService {
         emailService.sendOtp(account.getEmail(), otp);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = BadRequestException.class)
     public void resetPassword(ResetPasswordRequest request) {
         PasswordResetOtp resetOtp = otpRepository
-                .findTopByEmailAndUsedFalseOrderByCreatedAtDesc(request.getEmail())
+                .findTopByEmailAndUsedFalseOrderByCreatedAtDesc(trim(request.getEmail()))
                 .orElseThrow(() -> new BadRequestException("No OTP found. Please request a new one."));
 
         if (resetOtp.isUsed()) {
@@ -149,7 +165,15 @@ public class AuthService {
         if (resetOtp.getExpiresAt().isBefore(LocalDateTime.now())) {
             throw new BadRequestException("OTP has expired. Please request a new one.");
         }
-        if (!resetOtp.getOtp().equals(request.getOtp())) {
+        if (!otpMatches(resetOtp.getOtp(), request.getOtp())) {
+            int attempts = resetOtp.getFailedAttempts() + 1;
+            resetOtp.setFailedAttempts(attempts);
+            if (attempts >= MAX_OTP_ATTEMPTS) {
+                resetOtp.setUsed(true);
+                otpRepository.saveAndFlush(resetOtp);
+                throw new BadRequestException("Too many incorrect attempts. Please request a new OTP.");
+            }
+            otpRepository.saveAndFlush(resetOtp);
             throw new BadRequestException("Invalid OTP");
         }
 
@@ -167,6 +191,15 @@ public class AuthService {
 
         resetOtp.setUsed(true);
         otpRepository.save(resetOtp);
+    }
+
+    private static boolean otpMatches(String expected, String provided) {
+        if (provided == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8),
+                provided.trim().getBytes(StandardCharsets.UTF_8));
     }
 
     private static String trim(String value) {

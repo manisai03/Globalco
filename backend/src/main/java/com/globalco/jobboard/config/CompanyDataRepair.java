@@ -72,8 +72,12 @@ public class CompanyDataRepair implements ApplicationRunner {
             }
             String adminCompany = (String) row.get("admin_company");
             String replacement = RecruiterCompanyUtils.isLegacyPlaceholder(adminCompany) ? null : adminCompany;
+            if (replacement == null) {
+                // jobs.company is NOT NULL; wait until the recruiter sets a real company in their profile.
+                continue;
+            }
             String description = (String) row.get("description");
-            if (replacement != null && description != null) {
+            if (description != null) {
                 description = description
                         .replace("Globalco Technologies", replacement)
                         .replaceAll("(?i)\\bGlobalco\\b", replacement);
