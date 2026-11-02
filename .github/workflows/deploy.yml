@@ -1,6 +1,6 @@
 name: Deploy
 
-# Globalco Assessment — Auto-deploy to Render (backend) + Vercel (frontend)
+# Globalco Assessment — Auto-deploy to Render (microservices) + Vercel (frontend)
 # Runs only after the CI workflow succeeds on main/master, or when triggered manually.
 on:
   workflow_run:
@@ -10,8 +10,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy-backend:
-    name: Deploy Backend to Render
+  deploy-services:
+    name: Deploy Microservices to Render
     runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
@@ -19,16 +19,23 @@ jobs:
       || (github.event_name == 'workflow_dispatch'
         && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
     steps:
-      - name: Trigger Render Deploy Hook
+      # RENDER_DEPLOY_HOOKS: one deploy-hook URL per line, one for each service in render.yaml.
+      - name: Trigger Render Deploy Hooks
         run: |
-          if [ -n "$RENDER_DEPLOY_HOOK" ]; then
-            curl -X POST "$RENDER_DEPLOY_HOOK"
-            echo "Render deploy triggered"
-          else
-            echo "::warning::RENDER_DEPLOY_HOOK secret not set — skipping backend deploy"
+          if [ -z "$RENDER_DEPLOY_HOOKS" ]; then
+            echo "::warning::RENDER_DEPLOY_HOOKS secret not set — skipping services deploy"
+            exit 0
           fi
+          count=0
+          while IFS= read -r hook; do
+            hook="$(echo "$hook" | tr -d '[:space:]')"
+            [ -z "$hook" ] && continue
+            curl -fsS -X POST "$hook" > /dev/null
+            count=$((count + 1))
+          done <<< "$RENDER_DEPLOY_HOOKS"
+          echo "Triggered $count Render deploys"
         env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          RENDER_DEPLOY_HOOKS: ${{ secrets.RENDER_DEPLOY_HOOKS }}
 
   deploy-frontend:
     name: Deploy Frontend to Vercel

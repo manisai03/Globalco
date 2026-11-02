@@ -1,0 +1,108 @@
+# Defaults shared by every servlet service; imported via spring.config.import.
+# Keys here take precedence over the importing application.yml, so services must not redefine them
+# (override per environment with env vars instead).
+server:
+  # On SIGTERM, stop taking new requests and let in-flight ones finish (up to the timeout below).
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:20s}
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  datasource:
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:5}
+  jpa:
+    hibernate:
+      # Schema is owned by Flyway (src/main/resources/db/migration); Hibernate only checks it matches.
+      ddl-auto: ${JPA_DDL_AUTO:validate}
+    open-in-view: false
+    show-sql: false
+  flyway:
+    # Databases created before Flyway was introduced are adopted at V1 instead of re-running it.
+    baseline-on-migrate: true
+    baseline-version: 1
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    ssl:
+      enabled: ${RABBITMQ_SSL:false}
+    # Lets the outbox relay wait for the broker to confirm each event before deleting it.
+    publisher-confirm-type: simple
+    template:
+      observation-enabled: true
+    listener:
+      simple:
+        observation-enabled: true
+        # Failed messages are retried, then dead-lettered to <queue>.dlq instead of looping forever.
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000ms
+          multiplier: 2
+
+app:
+  # Anything other than local/test enforces real secrets at startup (see SecretsGuard).
+  env: ${APP_ENV:local}
+  jwt:
+    secret: ${JWT_SECRET:globalco-job-board-super-secret-key-change-in-production-min-256-bits}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  internal:
+    token: ${INTERNAL_API_TOKEN:local-dev-internal-token-change-me}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+    registry-fetch-interval-seconds: 5
+  instance:
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 10
+
+spring.cloud.openfeign:
+  client:
+    config:
+      default:
+        connect-timeout: 3000
+        read-timeout: 10000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Services are only reachable on the private network; the gateway never routes /actuator/**.
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      # /actuator/health/liveness (process is alive) and /actuator/health/readiness (started, not shutting down),
+      # used by the Docker health checks and any orchestrator.
+      probes:
+        enabled: true
+  health:
+    rabbit:
+      enabled: ${RABBIT_HEALTH_ENABLED:true}
+  tracing:
+    # Trace ids are always created and propagated (HTTP, Feign, RabbitMQ) and printed in every log line;
+    # this only controls how many traces are exported when a Zipkin/OTLP exporter is added.
+    sampling:
+      probability: ${TRACING_SAMPLING:0.1}
+
+logging:
+  pattern:
+    correlation: "[%X{traceId:-},%X{requestId:-}] "
+
+springdoc:
+  paths-to-match: /api/**
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: false

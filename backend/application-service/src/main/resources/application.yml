@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: application-service
+  config:
+    import: classpath:jobboard-shared.yml
+  datasource:
+    url: ${APPLICATION_DB_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/jobboard_applications?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+server:
+  port: ${PORT:9003}
+
+app:
+  events:
+    outbox:
+      enabled: true

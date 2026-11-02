@@ -12,14 +12,20 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import api, { unwrap } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import api, { loginUrl, unwrap } from '../services/api';
+import { useAuth } from '../context/auth';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/common/EmptyState';
 import JobMatchScore from '../components/JobMatchScore';
 import JobDescription from '../components/JobDescription';
 import ResumeUploadBox from '../components/ResumeUploadBox';
-import { formatSalary, daysAgo, parseSkills } from '../utils/formatters';
+import { getApiErrorMessage } from '../utils/apiError';
+import { validateResumeFile } from '../utils/files';
+import { formatSalary, daysAgo, parseSkills, pluralize } from '../utils/formatters';
+
+// Must match ApplicationService.MAX_COVER_LETTER_LENGTH.
+const COVER_LETTER_MAX = 5000;
 
 export default function JobDetails() {
   const { id } = useParams();
@@ -39,14 +45,20 @@ export default function JobDetails() {
   );
 
   useEffect(() => {
-    refreshJob().catch(() => setState({ id, job: null, error: true }));
+    let cancelled = false;
+    api.get(`/api/jobs/${id}`)
+      .then((res) => { if (!cancelled) setState({ id, job: unwrap(res), error: false }); })
+      .catch(() => { if (!cancelled) setState({ id, job: null, error: true }); });
     api.get(`/api/jobs/${id}/similar`)
-      .then((res) => setSimilar({ id, jobs: unwrap(res) || [] }))
-      .catch(() => setSimilar({ id, jobs: [] }));
-  }, [id, refreshJob]);
+      .then((res) => { if (!cancelled) setSimilar({ id, jobs: unwrap(res) || [] }); })
+      .catch(() => { if (!cancelled) setSimilar({ id, jobs: [] }); });
+    return () => { cancelled = true; };
+  }, [id]);
 
   const job = state.id === id ? state.job : null;
   const similarJobs = similar.id === id ? similar.jobs : [];
+  useDocumentTitle(job ? `${job.title} at ${job.company}` : 'Job details');
+  const goToLogin = () => navigate(loginUrl(`/jobs/${id}`));
 
   if (state.id === id && state.error) {
     return (
@@ -66,19 +78,26 @@ export default function JobDetails() {
     skillTags.length > 0 && `Skills: ${skillTags.slice(0, 4).join(', ')}`,
   ].filter(Boolean);
 
+  const submitting = applying || easyApplying;
+
   const submitApplication = async (easy = false) => {
-    if (!user) return navigate('/login');
+    if (!user) return goToLogin();
+    if (submitting) return;
+    if (!easy) {
+      const resumeErr = validateResumeFile(resume);
+      if (resumeErr) return toast.error(resumeErr);
+    }
     if (easy) setEasyApplying(true);
     else setApplying(true);
     try {
       const formData = new FormData();
-      if (!easy && coverLetter) formData.append('coverLetter', coverLetter);
+      if (!easy && coverLetter.trim()) formData.append('coverLetter', coverLetter.trim());
       if (!easy && resume) formData.append('resume', resume);
       await api.post(`/api/applications/jobs/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success(easy ? 'Easy Apply submitted!' : 'Application submitted!');
-      await refreshJob();
+      await refreshJob().catch(() => {});
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Application failed');
+      toast.error(getApiErrorMessage(err, 'Application failed'));
     } finally {
       setApplying(false);
       setEasyApplying(false);
@@ -86,7 +105,7 @@ export default function JobDetails() {
   };
 
   const toggleSave = async () => {
-    if (!user) return navigate('/login');
+    if (!user) return goToLogin();
     setSaving(true);
     try {
       if (job.saved) {
@@ -98,7 +117,7 @@ export default function JobDetails() {
       }
       await refreshJob();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Something went wrong');
+      toast.error(getApiErrorMessage(err, 'Something went wrong'));
     } finally {
       setSaving(false);
     }
@@ -176,9 +195,9 @@ export default function JobDetails() {
 
             <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
               <span className="flex items-center gap-1"><Clock className="size-4" />Posted {daysAgo(job.createdAt)}</span>
-              <span className="flex items-center gap-1"><Users className="size-4" />{job.applicantCount || 0} applicants</span>
+              <span className="flex items-center gap-1"><Users className="size-4" />{pluralize(job.applicantCount, 'applicant')}</span>
               {job.jobType && <Badge variant="secondary">{job.jobType}</Badge>}
-              {job.status && job.status !== 'OPEN' && <Badge variant="destructive">{job.status}</Badge>}
+              {job.status && job.status !== 'OPEN' && <Badge variant="destructive">No longer accepting applications</Badge>}
             </div>
 
             {isAdmin ? (
@@ -194,8 +213,8 @@ export default function JobDetails() {
                 <Button
                   type="button"
                   size="lg"
-                  onClick={() => (user ? submitApplication(true) : navigate('/login'))}
-                  disabled={easyApplying}
+                  onClick={() => (user ? submitApplication(true) : goToLogin())}
+                  disabled={submitting}
                 >
                   {easyApplying ? <Loader2 className="animate-spin" /> : <Zap />}
                   {easyApplying ? 'Applying…' : 'Easy Apply'}
@@ -204,7 +223,8 @@ export default function JobDetails() {
                   type="button"
                   size="lg"
                   variant="outline"
-                  onClick={() => (user ? document.getElementById('apply-section')?.scrollIntoView({ behavior: 'smooth' }) : navigate('/login'))}
+                  disabled={submitting}
+                  onClick={() => (user ? document.getElementById('apply-section')?.scrollIntoView({ behavior: 'smooth' }) : goToLogin())}
                 >
                   Apply with cover letter
                 </Button>
@@ -265,16 +285,27 @@ export default function JobDetails() {
                     onChange={(e) => setCoverLetter(e.target.value)}
                     placeholder="Why you're a great fit for this role…"
                     rows={5}
+                    maxLength={COVER_LETTER_MAX}
                   />
+                  <p className="text-right text-xs text-muted-foreground">{coverLetter.length}/{COVER_LETTER_MAX}</p>
                 </div>
                 <ResumeUploadBox
                   compact
                   label="Upload resume"
                   fileName={resume?.name}
-                  onUpload={(e) => setResume(e.target.files?.[0] || null)}
-                  hint={!resume ? 'Your profile resume is used if no file is uploaded' : undefined}
+                  onUpload={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    const err = validateResumeFile(file);
+                    if (err) {
+                      toast.error(err);
+                      e.target.value = '';
+                      return;
+                    }
+                    setResume(file);
+                  }}
+                  hint={!resume ? 'PDF, DOC or DOCX up to 10 MB. Your profile resume is used if no file is uploaded.' : undefined}
                 />
-                <Button type="button" onClick={() => submitApplication(false)} disabled={applying} className="w-full sm:w-auto">
+                <Button type="button" onClick={() => submitApplication(false)} disabled={submitting} className="w-full sm:w-auto">
                   {applying && <Loader2 className="animate-spin" />}
                   {applying ? 'Submitting…' : 'Submit application'}
                 </Button>

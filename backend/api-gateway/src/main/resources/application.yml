@@ -1,0 +1,129 @@
+spring:
+  application:
+    name: api-gateway
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:20s}
+  cloud:
+    gateway:
+      httpclient:
+        connect-timeout: 5000
+        response-timeout: 60s
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials X-Request-Id, RETAIN_FIRST
+      # Order matters: the first matching route wins, so specific paths come before broad ones.
+      routes:
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/**,/api/users/**,/api/files/**
+
+        - id: job-service-admin
+          uri: lb://job-service
+          predicates:
+            - Path=/api/admin/jobs,/api/admin/jobs/**
+
+        - id: job-service
+          uri: lb://job-service
+          predicates:
+            - Path=/api/jobs/**,/api/jobs,/api/saved-jobs/**,/api/saved-jobs,/api/saved-searches/**,/api/saved-searches,/api/companies/**,/api/public/**
+
+        - id: application-service
+          uri: lb://application-service
+          predicates:
+            - Path=/api/applications/**,/api/admin/**
+
+        - id: messaging-service-ws
+          uri: lb:ws://messaging-service
+          predicates:
+            - Path=/ws/**
+
+        - id: messaging-service
+          uri: lb://messaging-service
+          predicates:
+            - Path=/api/messages/**
+
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notifications/**,/api/notifications
+
+        - id: ai-service
+          uri: lb://ai-service
+          predicates:
+            - Path=/api/ai/**
+
+        # OpenAPI documents of each service, combined in the Swagger UI at /swagger-ui.html
+        - id: auth-service-docs
+          uri: lb://auth-service
+          predicates: [ Path=/v3/api-docs/auth-service ]
+          filters: [ SetPath=/v3/api-docs ]
+        - id: job-service-docs
+          uri: lb://job-service
+          predicates: [ Path=/v3/api-docs/job-service ]
+          filters: [ SetPath=/v3/api-docs ]
+        - id: application-service-docs
+          uri: lb://application-service
+          predicates: [ Path=/v3/api-docs/application-service ]
+          filters: [ SetPath=/v3/api-docs ]
+        - id: messaging-service-docs
+          uri: lb://messaging-service
+          predicates: [ Path=/v3/api-docs/messaging-service ]
+          filters: [ SetPath=/v3/api-docs ]
+        - id: notification-service-docs
+          uri: lb://notification-service
+          predicates: [ Path=/v3/api-docs/notification-service ]
+          filters: [ SetPath=/v3/api-docs ]
+        - id: ai-service-docs
+          uri: lb://ai-service
+          predicates: [ Path=/v3/api-docs/ai-service ]
+          filters: [ SetPath=/v3/api-docs ]
+
+server:
+  port: ${PORT:8090}
+  shutdown: graceful
+
+springdoc:
+  # The UI needs the gateway's own /v3/api-docs/swagger-config; the gateway itself has no endpoints to document.
+  paths-to-match: /none
+  swagger-ui:
+    path: /swagger-ui.html
+    urls:
+      - { name: auth-service, url: /v3/api-docs/auth-service }
+      - { name: job-service, url: /v3/api-docs/job-service }
+      - { name: application-service, url: /v3/api-docs/application-service }
+      - { name: messaging-service, url: /v3/api-docs/messaging-service }
+      - { name: notification-service, url: /v3/api-docs/notification-service }
+      - { name: ai-service, url: /v3/api-docs/ai-service }
+
+app:
+  env: ${APP_ENV:local}
+  jwt:
+    secret: ${JWT_SECRET:globalco-job-board-super-secret-key-change-in-production-min-256-bits}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:}
+  internal:
+    token: ${INTERNAL_API_TOKEN:local-dev-internal-token-change-me}
+  rate-limit:
+    trust-forwarded-for: ${TRUST_FORWARDED_FOR:false}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+    registry-fetch-interval-seconds: 5
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  pattern:
+    correlation: "[%X{traceId:-}] "

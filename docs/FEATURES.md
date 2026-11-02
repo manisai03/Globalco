@@ -99,7 +99,7 @@ Complete feature list for the AI-powered Job Board platform.
 | Applications | Status badges, match score, withdraw, view job |
 | Interviews | Scheduled interviews (`GET /api/applications/interviews/me`) |
 | Saved Jobs | Bookmarked listings grid |
-| Job Alerts | Saved searches with live match counts |
+| Job Alerts | Saved searches with live match counts, an on/off switch, and a notification when a matching job is posted |
 
 Messages and Profile via navbar: `/dashboard?tab=messages`, `/dashboard?tab=profile`
 
@@ -139,7 +139,7 @@ Messages and Profile via navbar: `/admin?tab=messages`, `/admin?tab=profile`
 
 | Feature | Description |
 |---------|-------------|
-| WebSocket chat | `ws://<api>/ws/chat?token=<JWT>` |
+| WebSocket chat | `ws://<api>/ws/chat?ticket=<single-use ticket>` (from `POST /api/messages/ws-ticket`) |
 | Recruiter initiates | Only admin can start new conversations |
 | Candidate reply | After recruiter's first message |
 | Identity masking | Candidate name hidden until application viewed |
@@ -198,10 +198,11 @@ Polled every 10s in navbar. Panel: mark read, mark all read, delete.
 | GitHub Actions Deploy | `.github/workflows/deploy.yml` |
 | Vercel SPA config | `frontend/vercel.json` |
 | Render blueprint | `render.yaml` |
-| Docker backend | `backend/Dockerfile` |
-| Schema reference | `database/schema.sql` (legacy; JPA is source of truth) |
-| Env examples | `frontend/.env.example`, `backend/.env.example` |
-| Startup migrations | `LegacySchemaMigration`, `CompanyDataRepair` |
+| Docker image (all services) | `backend/Dockerfile` (`MODULE` build arg) |
+| Local stack | `backend/docker-compose.yml`, `backend/scripts/run-local.ps1` |
+| Smoke test | `backend/scripts/smoke-test.ps1` |
+| Data migration from the old monolith | `backend/scripts/migrate-from-monolith.sql` |
+| Env example | `frontend/.env.example` |
 
 ---
 

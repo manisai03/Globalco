@@ -1,6 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-
-const ThemeContext = createContext(null);
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ThemeContext } from './theme';
 
 function getInitialDark() {
   const stored = localStorage.getItem('theme');
@@ -21,6 +20,3 @@ export function ThemeProvider({ children }) {
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
-
-// eslint-disable-next-line react-refresh/only-export-components
-export const useTheme = () => useContext(ThemeContext);

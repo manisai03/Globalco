@@ -1,5 +1,9 @@
 function stripBold(text) {
-  return text.replace(/\*\*(.+?)\*\*/g, '$1');
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/(^|[^*\w])\*(?!\s)([^*]+?)\*(?!\w)/g, '$1$2')
+    .replace(/`([^`]+)`/g, '$1');
 }
 
 function parseSections(text) {
@@ -22,10 +26,12 @@ function parseSections(text) {
       continue;
     }
 
-    const sectionMatch = line.match(/^\*\*(.+?)\*\*$/);
+    if (/^([-*_])\1{2,}$/.test(line)) continue;
+
+    const sectionMatch = line.match(/^\*\*(.+?)\*\*:?$/) || line.match(/^#{1,6}\s+(.+?)\s*#*$/);
     if (sectionMatch) {
       if (currentSection) blocks.push(currentSection);
-      currentSection = { title: sectionMatch[1], bullets: [], paragraphs: [] };
+      currentSection = { title: stripBold(sectionMatch[1]).replace(/:$/, ''), bullets: [], paragraphs: [] };
       continue;
     }
 

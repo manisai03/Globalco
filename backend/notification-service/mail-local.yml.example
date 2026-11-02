@@ -1,0 +1,25 @@
+# Copy to mail-local.yml in this folder and fill in your SMTP credentials (the copy is gitignored).
+# Without it, password-reset OTPs are printed to logs/notification-service.log when
+# LOG_OTP_WHEN_UNCONFIGURED=true (run-local.ps1 sets this).
+#
+# Brevo: SMTP & API -> SMTP -> copy the login and an SMTP key
+#   Host: smtp-relay.brevo.com  Port: 587
+# In production prefer the Brevo HTTP API: set BREVO_API_KEY and MAIL_FROM instead of this file.
+spring:
+  mail:
+    host: smtp-relay.brevo.com
+    port: 587
+    username: your-login@smtp-brevo.com
+    password: your-smtp-key
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+
+app:
+  mail:
+    from: your-verified-sender@example.com

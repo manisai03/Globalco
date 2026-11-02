@@ -3,7 +3,7 @@ node_modules/
 frontend/dist/
 
 # Build
-backend/target/
+backend/**/target/
 *.jar
 *.war
 
@@ -17,12 +17,12 @@ backend/target/
 .env.local
 .env.production
 frontend/.env
-backend/mail-local.yml
-backend/cloudinary-local.yml
-backend/mysql-local.yml
+backend/**/*-local.yml
+backend/config-local/
 
-# Uploads
-backend/uploads/
+# Uploads & logs
+backend/**/uploads/
+backend/logs/
 uploads/
 
 # OS

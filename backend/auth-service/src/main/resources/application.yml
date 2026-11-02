@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: auth-service
+  config:
+    import: classpath:jobboard-shared.yml,optional:file:./cloudinary-local.yml
+  datasource:
+    url: ${AUTH_DB_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/jobboard_auth?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+server:
+  port: ${PORT:9001}
+
+app:
+  events:
+    outbox:
+      enabled: true
+  security:
+    public-paths: /api/auth/**
+  upload:
+    dir: ${UPLOAD_DIR:uploads}
+  cloudinary:
+    cloud-name: ${CLOUDINARY_CLOUD_NAME:}
+    api-key: ${CLOUDINARY_API_KEY:}
+    api-secret: ${CLOUDINARY_API_SECRET:}
+    folder: ${CLOUDINARY_FOLDER:job-board/avatars}

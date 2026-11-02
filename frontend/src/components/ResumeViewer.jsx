@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Download, Eye, FileText, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '../services/api';
-import { migrateFromLocalStorage } from '../services/authStorage';
 
 function parseResumePath(url) {
   if (!url) return null;
@@ -34,8 +33,13 @@ export default function ResumeViewer({ resumePath, label = 'Resume' }) {
       const url = URL.createObjectURL(res.data);
       setBlobUrl(url);
       return url;
-    } catch {
-      setError('Unable to load resume. The file may have been removed.');
+    } catch (err) {
+      const status = err.response?.status;
+      setError(
+        status === 404 ? 'This resume is no longer available. The candidate may have replaced or deleted it.'
+          : status === 403 ? 'You do not have access to this resume.'
+            : 'Unable to load the resume right now. Check your connection and try again.'
+      );
       return null;
     } finally {
       setLoading(false);
@@ -61,7 +65,6 @@ export default function ResumeViewer({ resumePath, label = 'Resume' }) {
       return;
     }
     if (!parsed) return;
-    migrateFromLocalStorage();
     const q = new URLSearchParams({ subfolder: parsed.subfolder, filename: parsed.filename });
     window.open(`${window.location.origin}/resume-viewer?${q}`, '_blank', 'noopener,noreferrer');
   };

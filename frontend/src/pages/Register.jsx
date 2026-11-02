@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Briefcase, Building2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
 import api, { unwrap } from '../services/api';
 import AuthShell from '../components/common/AuthShell';
 import PasswordInput from '../components/common/PasswordInput';
-import { validateRegister } from '../utils/validation';
+import { PASSWORD_MAX, PASSWORD_MIN, validateRegister } from '../utils/validation';
 import { getApiErrorMessage } from '../utils/apiError';
 import { normalizeEmail, normalizePhone, trimFormFields } from '../utils/normalize';
 
@@ -31,7 +31,10 @@ function SectionHeading({ children }) {
 
 export default function Register() {
   const navigate = useNavigate();
-  const [accountType, setAccountType] = useState('CANDIDATE');
+  const [searchParams] = useSearchParams();
+  const [accountType, setAccountType] = useState(() => (
+    searchParams.get('type')?.toLowerCase() === 'recruiter' ? 'RECRUITER' : 'CANDIDATE'
+  ));
   const [form, setForm] = useState({
     email: '', password: '', fullName: '', phone: '', location: '',
     currentTitle: '', skills: '',
@@ -138,8 +141,14 @@ export default function Register() {
             onChange={(e) => setForm({ ...form, password: e.target.value })}
             className="h-11"
             required
+            minLength={PASSWORD_MIN}
+            maxLength={PASSWORD_MAX}
             autoComplete="new-password"
+            aria-describedby="register-password-hint"
           />
+          <p id="register-password-hint" className="text-xs text-muted-foreground">
+            {PASSWORD_MIN}–{PASSWORD_MAX} characters
+          </p>
         </div>
         {field('phone', 'Phone', { type: 'tel', inputMode: 'tel', autoComplete: 'tel' })}
         {field('location', 'Location', { placeholder: 'Hyderabad' })}

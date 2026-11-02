@@ -2,8 +2,10 @@ import { Briefcase } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Separator } from '@/components/ui/separator';
 import { APP_NAME } from '../utils/appBranding';
+import { useAuth } from '../context/auth';
 
 export default function Footer() {
+  const { user, isAdmin } = useAuth();
   return (
     <footer className="mt-auto border-t bg-card">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
@@ -21,7 +23,15 @@ export default function Footer() {
             <h4 className="font-semibold">Platform</h4>
             <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
               <li><Link to="/jobs" className="transition-colors hover:text-primary">Browse Jobs</Link></li>
-              <li><Link to="/register" className="transition-colors hover:text-primary">Create Account</Link></li>
+              {user ? (
+                <li>
+                  <Link to={isAdmin ? '/admin' : '/dashboard'} className="transition-colors hover:text-primary">
+                    {isAdmin ? 'Recruiter dashboard' : 'My dashboard'}
+                  </Link>
+                </li>
+              ) : (
+                <li><Link to="/register" className="transition-colors hover:text-primary">Create Account</Link></li>
+              )}
             </ul>
           </div>
           <div>

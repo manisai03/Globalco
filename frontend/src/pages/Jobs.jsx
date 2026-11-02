@@ -14,8 +14,9 @@ import JobCardSkeleton from '../components/common/JobCardSkeleton';
 import Pagination from '../components/common/Pagination';
 import EmptyState from '../components/common/EmptyState';
 import SelectField from '../components/common/SelectField';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 import { useDebouncedField } from '../hooks/useDebouncedField';
+import { getApiErrorMessage } from '../utils/apiError';
 
 const CATEGORIES = ['Engineering', 'Design', 'Marketing', 'Sales', 'Finance', 'HR', 'Operations', 'Data Science'];
 const JOB_TYPES = ['Full-time', 'Part-time', 'Contract', 'Remote', 'Internship'];
@@ -234,11 +235,12 @@ export default function Jobs() {
         experienceLevel: f.experienceLevel || null,
         category: f.category || null,
         minSalary: f.minSalary ? Number(f.minSalary) : null,
+        postedWithin: f.postedWithin || null,
         sort: f.sort || 'recent',
       });
-      toast.success('Job alert saved — view in Dashboard → Job Alerts');
+      toast.success('Job alert saved — you will be notified when new matching jobs are posted');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to save alert');
+      toast.error(getApiErrorMessage(err, 'Failed to save alert'));
     }
   };
 

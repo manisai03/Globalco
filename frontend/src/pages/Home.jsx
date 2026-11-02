@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import api, { unwrap } from '../services/api';
 import JobCard from '../components/JobCard';
 import JobCardSkeleton from '../components/common/JobCardSkeleton';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 
 const QUICK_TAGS = ['Remote', 'Engineering', 'Full-time', 'Hyderabad'];
 
@@ -74,7 +74,7 @@ export default function Home() {
             Your next role starts here
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-primary-100">
-            Search thousands of openings, apply in one click, and track every application — powered by AI match scoring.
+            Search open roles, apply in one click, and track every application — powered by AI match scoring.
           </p>
           <form onSubmit={handleSearch} className="mx-auto mt-8 flex max-w-2xl flex-col gap-3 sm:flex-row" role="search">
             <div className="relative flex-1">
@@ -121,7 +121,7 @@ export default function Home() {
                 {loading ? (
                   <Skeleton className="mt-3 h-9 w-16" />
                 ) : (
-                  <p className="mt-3 text-3xl font-bold">{value}+</p>
+                  <p className="mt-3 text-3xl font-bold">{value}</p>
                 )}
                 <p className="text-sm text-muted-foreground">{label}</p>
               </CardContent>
@@ -183,18 +183,20 @@ export default function Home() {
         )}
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6">
-        <Card className="flex-col items-center gap-4 bg-gradient-to-r from-primary-50 to-card p-10 text-center dark:from-primary-950/40 sm:flex-row sm:text-left">
-          <Shield className="size-10 shrink-0 text-primary" />
-          <div className="flex-1">
-            <h3 className="text-xl font-bold">Recruiters: post jobs in minutes</h3>
-            <p className="mt-1 text-sm text-muted-foreground">AI-generated descriptions, applicant tracking, and real-time messaging.</p>
-          </div>
-          <Button asChild size="lg" className="shrink-0">
-            <Link to="/register">Get started</Link>
-          </Button>
-        </Card>
-      </section>
+      {(!user || isAdmin) && (
+        <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6">
+          <Card className="flex-col items-center gap-4 bg-gradient-to-r from-primary-50 to-card p-10 text-center dark:from-primary-950/40 sm:flex-row sm:text-left">
+            <Shield className="size-10 shrink-0 text-primary" />
+            <div className="flex-1">
+              <h3 className="text-xl font-bold">Recruiters: post jobs in minutes</h3>
+              <p className="mt-1 text-sm text-muted-foreground">AI-generated descriptions, applicant tracking, and real-time messaging.</p>
+            </div>
+            <Button asChild size="lg" className="shrink-0">
+              {isAdmin ? <Link to="/admin/jobs/new">Post a job</Link> : <Link to="/register?type=recruiter">Get started</Link>}
+            </Button>
+          </Card>
+        </section>
+      )}
     </div>
   );
 }

@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import api, { unwrap } from '../services/api';
 import { chatSocket } from '../services/chatSocket';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
+import { getApiErrorMessage } from '../utils/apiError';
 
 const FALLBACK_POLL_MS = 5000;
 
@@ -42,6 +43,8 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
   const [live, setLive] = useState(chatSocket.isConnected());
+  const [contactsError, setContactsError] = useState(false);
+  const [conversationError, setConversationError] = useState(false);
   const scrollRef = useRef(null);
   const selectedRef = useRef(null);
 
@@ -56,7 +59,10 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
     try {
       const res = await api.get('/api/messages/partners');
       setContacts(unwrap(res));
-    } catch { /* ignore */ }
+      setContactsError(false);
+    } catch {
+      setContactsError(true);
+    }
   }, []);
 
   const loadMessages = useCallback(async (partnerId, silent = false) => {
@@ -66,9 +72,12 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
       const data = unwrap(res);
       if (selectedRef.current?.id === partnerId) {
         setMessages(data);
+        setConversationError(false);
         if (!silent) loadContacts();
       }
-    } catch { /* ignore */ }
+    } catch {
+      if (!silent && selectedRef.current?.id === partnerId) setConversationError(true);
+    }
   }, [loadContacts]);
 
   const appendMessage = useCallback((msg) => {
@@ -102,12 +111,13 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
       .then((res) => {
         const list = unwrap(res);
         setContacts(list);
+        setContactsError(false);
         if (preselectId) {
           const contact = list.find((c) => c.id === Number(preselectId));
           if (contact) setSelected(contact);
         }
       })
-      .catch(() => {});
+      .catch(() => setContactsError(true));
   }, [preselectId]);
 
   const selectedId = selected?.id;
@@ -115,10 +125,16 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
     if (!selectedId) return undefined;
     api.get(`/api/messages/conversation/${selectedId}`)
       .then((res) => {
-        if (selectedRef.current?.id === selectedId) setMessages(unwrap(res));
+        if (selectedRef.current?.id === selectedId) {
+          setMessages(unwrap(res));
+          setConversationError(false);
+        }
         loadContacts();
+        onUnreadChange?.();
       })
-      .catch(() => {});
+      .catch(() => {
+        if (selectedRef.current?.id === selectedId) setConversationError(true);
+      });
     const interval = setInterval(poll, FALLBACK_POLL_MS);
     const onFocus = () => { loadMessages(selectedId, true); loadContacts(); };
     window.addEventListener('focus', onFocus);
@@ -128,7 +144,7 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onFocus);
     };
-  }, [selectedId, poll, loadMessages, loadContacts]);
+  }, [selectedId, poll, loadMessages, loadContacts, onUnreadChange]);
 
   const lastMessageId = messages[messages.length - 1]?.id;
   useEffect(() => {
@@ -137,7 +153,10 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
   }, [lastMessageId, selectedId]);
 
   const selectContact = (c) => {
-    if (c.id !== selectedId) setMessages([]);
+    if (c.id !== selectedId) {
+      setMessages([]);
+      setConversationError(false);
+    }
     setSelected(c);
   };
 
@@ -170,7 +189,7 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
       setContent(text);
-      toast.error(err.response?.data?.message || 'Failed to send message');
+      toast.error(getApiErrorMessage(err, 'Failed to send message'));
     } finally {
       setSending(false);
     }
@@ -199,7 +218,12 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
           <UnreadBadge count={totalUnread} />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {contacts.length === 0 ? (
+          {contactsError && contacts.length === 0 ? (
+            <div className="space-y-3 p-4 text-sm text-muted-foreground" role="alert">
+              <p>Could not load your conversations.</p>
+              <Button type="button" size="sm" variant="outline" onClick={loadContacts}>Try again</Button>
+            </div>
+          ) : contacts.length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">
               {isAdmin
                 ? 'Select an applicant to start a conversation'
@@ -267,9 +291,16 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
             </header>
 
             <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
-              {messages.length === 0 && (
+              {messages.length === 0 && (conversationError ? (
+                <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground" role="alert">
+                  <p>Could not load this conversation.</p>
+                  <Button type="button" size="sm" variant="outline" onClick={() => loadMessages(selectedId)}>
+                    Try again
+                  </Button>
+                </div>
+              ) : (
                 <p className="text-center text-sm text-muted-foreground">No messages in this conversation yet.</p>
-              )}
+              ))}
               {messages.map((m) => (
                 <div key={m.id} className={cn('flex', isMine(m) ? 'justify-end' : 'justify-start')}>
                   <div
@@ -298,7 +329,7 @@ export default function ChatPanel({ embedded = false, onUnreadChange }) {
                   autoComplete="off"
                   maxLength={2000}
                 />
-                <Button type="submit" className="h-10" disabled={sending || !content.trim()}>
+                <Button type="submit" className="h-10" disabled={sending || !content.trim()} aria-label="Send message">
                   {sending ? <Loader2 className="animate-spin" /> : <Send />}
                   <span className="hidden sm:inline">Send</span>
                 </Button>

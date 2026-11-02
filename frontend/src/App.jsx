@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider } from './context/AuthContext';
@@ -7,6 +7,8 @@ import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoadingSpinner from './components/LoadingSpinner';
+import ErrorBoundary from './components/ErrorBoundary';
+import RouteTitle from './components/RouteTitle';
 import Home from './pages/Home';
 
 const Login = lazy(() => import('./pages/Login'));
@@ -27,14 +29,24 @@ const ApplicationDetailPage = lazy(() => import('./pages/ApplicationDetailPage')
 const ResumeViewerPage = lazy(() => import('./pages/ResumeViewerPage'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
+function RouteShell({ children }) {
+  const { pathname } = useLocation();
+  return (
+    <ErrorBoundary key={pathname}>
+      <Suspense fallback={<LoadingSpinner fullScreen />}>{children}</Suspense>
+    </ErrorBoundary>
+  );
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
         <TooltipProvider delayDuration={200}>
           <BrowserRouter>
+            <RouteTitle />
             <Layout>
-              <Suspense fallback={<LoadingSpinner fullScreen />}>
+              <RouteShell>
                 <Routes>
                   <Route path="/" element={<Home />} />
                   <Route path="/login" element={<Login />} />
@@ -56,7 +68,7 @@ export default function App() {
                   <Route path="/notifications/:id" element={<ProtectedRoute><NotificationDetailPage /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
-              </Suspense>
+              </RouteShell>
             </Layout>
             <Toaster position="top-right" richColors closeButton />
           </BrowserRouter>

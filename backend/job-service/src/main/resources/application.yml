@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: job-service
+  config:
+    import: classpath:jobboard-shared.yml
+  datasource:
+    url: ${JOB_DB_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/jobboard_jobs?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+
+server:
+  port: ${PORT:9002}
+
+app:
+  events:
+    outbox:
+      enabled: true
+  security:
+    public-paths: /api/public/**
+    public-get-paths: /api/jobs/**,/api/jobs,/api/companies/**

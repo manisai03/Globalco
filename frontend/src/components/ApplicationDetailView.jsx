@@ -9,10 +9,8 @@ import JobMatchScore from './JobMatchScore';
 import ResumeViewer from './ResumeViewer';
 import EmptyState from './common/EmptyState';
 import StatusBadge from './common/StatusBadge';
+import ApplicationStatusActions from './ApplicationStatusActions';
 import { daysAgo, parseSkills } from '../utils/formatters';
-import { formatStatus } from '../utils/applicationStatus';
-
-const STATUS_ACTIONS = ['SHORTLISTED', 'REJECTED', 'INTERVIEW_SCHEDULED', 'HIRED'];
 
 function Section({ title, children }) {
   return (
@@ -26,7 +24,7 @@ function Section({ title, children }) {
 export default function ApplicationDetailView({
   applicationId,
   adminMode = true,
-  onStatusUpdate,
+  onStatusChanged,
   onMessage,
 }) {
   const [result, setResult] = useState({ id: null, detail: null });
@@ -110,24 +108,19 @@ export default function ApplicationDetailView({
 
       {adminMode && (
         <Card className="flex-row flex-wrap items-center justify-between gap-3 bg-muted/50 p-4">
-          <Button type="button" onClick={() => onMessage?.(detail)}>
-            <MessageSquare /> Message Candidate
-          </Button>
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Update status">
-            {STATUS_ACTIONS.map((s) => (
-              <Button
-                key={s}
-                type="button"
-                size="sm"
-                variant={detail.status === s ? 'default' : 'outline'}
-                aria-pressed={detail.status === s}
-                disabled={detail.status === 'WITHDRAWN'}
-                onClick={() => onStatusUpdate?.(detail.id, s)}
-              >
-                {formatStatus(s)}
-              </Button>
-            ))}
-          </div>
+          {detail.status !== 'JOB_REMOVED' && (
+            <Button type="button" onClick={() => onMessage?.(detail)}>
+              <MessageSquare /> Message Candidate
+            </Button>
+          )}
+          <ApplicationStatusActions
+            applicationId={detail.id}
+            status={detail.status}
+            onChanged={(status) => {
+              setResult((prev) => ({ ...prev, detail: { ...prev.detail, status } }));
+              onStatusChanged?.(status);
+            }}
+          />
         </Card>
       )}
     </div>

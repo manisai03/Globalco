@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: messaging-service
+  config:
+    import: classpath:jobboard-shared.yml
+  datasource:
+    url: ${MESSAGING_DB_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/jobboard_messaging?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+
+server:
+  port: ${PORT:9004}
+
+app:
+  events:
+    outbox:
+      enabled: true
+  security:
+    # The handshake authenticates via ?token= in ChatWebSocketConfig.
+    public-paths: /ws/**
+  cors:
+    allowed-origins: ${CORS_ORIGINS:}

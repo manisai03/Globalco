@@ -4,13 +4,12 @@ import { ArrowLeft, Loader2, Pencil, Plus, SearchX } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import api, { unwrap } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/common/EmptyState';
 import SelectField from '../components/common/SelectField';
@@ -23,6 +22,7 @@ import {
   jobToForm,
 } from '../utils/jobFormDefaults';
 import { resolveRecruiterCompany } from '../utils/recruiterCompany';
+import { getApiErrorMessage } from '../utils/apiError';
 
 function Field({ id, label, required, children, action, hint }) {
   return (
@@ -71,26 +71,12 @@ export default function AdminJobFormPage() {
   }
 
   const set = (field) => (e) => setJobForm((f) => ({ ...f, [field]: e.target.value }));
-
-  const syncCompanyFromProfile = async () => {
-    try {
-      const fresh = await refreshUser();
-      const company = resolveRecruiterCompany(fresh, '');
-      if (!company) {
-        return toast.error('Update Company Name in your Profile (e.g. XPO)');
-      }
-      setJobForm((f) => ({ ...f, company, location: fresh.location?.trim() || f.location }));
-      toast.success(`Company set to ${company}`);
-    } catch {
-      toast.error('Could not load your profile');
-    }
-  };
+  const company = resolveRecruiterCompany(user, '');
 
   const saveJob = async (e) => {
     e.preventDefault();
-    const company = resolveRecruiterCompany(user, jobForm.company);
     if (!company) {
-      return toast.error('Set your company name in Profile or the Company field');
+      return toast.error('Set your real company name in your Profile before posting jobs');
     }
     const salaryMin = jobForm.salaryMin ? Number(jobForm.salaryMin) : null;
     const salaryMax = jobForm.salaryMax ? Number(jobForm.salaryMax) : null;
@@ -102,7 +88,6 @@ export default function AdminJobFormPage() {
     }
     const payload = {
       ...jobForm,
-      company,
       description: scrubGlobalcoFromDescription(jobForm.description, company),
       salaryMin,
       salaryMax,
@@ -118,7 +103,7 @@ export default function AdminJobFormPage() {
       }
       navigate('/admin?tab=jobs');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to save job');
+      toast.error(getApiErrorMessage(err, 'Failed to save job'));
     } finally {
       setSaving(false);
     }
@@ -161,27 +146,22 @@ export default function AdminJobFormPage() {
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field id="job-title" label="Job Title" required>
-                <Input id="job-title" value={jobForm.title} onChange={set('title')} required placeholder="e.g. Senior Software Engineer" />
+                <Input id="job-title" value={jobForm.title} onChange={set('title')} required maxLength={150} placeholder="e.g. Senior Software Engineer" />
               </Field>
               <Field
                 id="job-company"
                 label="Company"
-                required
-                action={
-                  <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={syncCompanyFromProfile}>
-                    Sync from profile
-                  </Button>
-                }
-                hint={!jobForm.company && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    Set company in <Link to="/admin?tab=profile" className="underline">Profile</Link> or enter it here
+                hint={
+                  <p className={cn('text-xs', company ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-400')}>
+                    {company ? 'From your profile. ' : 'Set your company name in your profile to post jobs. '}
+                    <Link to="/admin?tab=profile" className="underline">Edit profile</Link>
                   </p>
-                )}
+                }
               >
-                <Input id="job-company" value={jobForm.company} onChange={set('company')} required placeholder="Your recruiting company" />
+                <Input id="job-company" value={company} readOnly disabled placeholder="Not set" />
               </Field>
               <Field id="job-location" label="Location" required>
-                <Input id="job-location" value={jobForm.location} onChange={set('location')} required placeholder="Hyderabad / Remote" />
+                <Input id="job-location" value={jobForm.location} onChange={set('location')} required maxLength={150} placeholder="Hyderabad / Remote" />
               </Field>
               <Field id="job-type" label="Job Type" required>
                 <SelectField id="job-type" value={jobForm.jobType} onValueChange={(v) => setJobForm((f) => ({ ...f, jobType: v }))} options={JOB_TYPES} />
@@ -201,24 +181,15 @@ export default function AdminJobFormPage() {
             </div>
 
             <Field id="job-skills" label="Required Skills (comma separated)">
-              <Input id="job-skills" value={jobForm.skills} onChange={set('skills')} placeholder="Java, React, MySQL" />
+              <Input id="job-skills" value={jobForm.skills} onChange={set('skills')} maxLength={1000} placeholder="Java, React, MySQL" />
             </Field>
 
             <Field id="job-description" label="Job Description" required>
-              <Textarea id="job-description" value={jobForm.description} onChange={set('description')} rows={10} required placeholder="Describe the role, responsibilities, and requirements..." />
+              <Textarea id="job-description" value={jobForm.description} onChange={set('description')} rows={10} required maxLength={20000} placeholder="Describe the role, responsibilities, and requirements. Markdown headings and bullet lists are supported." />
             </Field>
-
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="job-featured"
-                checked={!!jobForm.featured}
-                onCheckedChange={(checked) => setJobForm((f) => ({ ...f, featured: checked === true }))}
-              />
-              <Label htmlFor="job-featured" className="font-normal">Mark as Featured Job</Label>
-            </div>
           </CardContent>
           <CardFooter className="mt-6 gap-3">
-            <Button type="submit" size="lg" disabled={saving} className={cn('text-white', accent.button)}>
+            <Button type="submit" size="lg" disabled={saving || !company} className={cn('text-white', accent.button)}>
               {saving && <Loader2 className="animate-spin" />}
               {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Publish Job'}
             </Button>

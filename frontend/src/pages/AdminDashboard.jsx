@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Sparkles, Eye, Search, Plus, Pencil, Trash2, Briefcase, Loader2, AlertTriangle,
@@ -11,25 +10,32 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { chartAxisProps, chartTooltipProps } from '@/lib/chart';
 import { cn } from '@/lib/utils';
 import api, { unwrap } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 import LoadingSpinner from '../components/LoadingSpinner';
-import ApplicantStatusChart from '../components/ApplicantStatusChart';
+import ApplicationStatusActions from '../components/ApplicationStatusActions';
 import ChatPanel from '../components/ChatPanel';
 import ProfilePanel from '../components/ProfilePanel';
 import EmptyState from '../components/common/EmptyState';
+import Pagination from '../components/common/Pagination';
 import StatusBadge from '../components/common/StatusBadge';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import SelectField from '../components/common/SelectField';
-import { daysAgo, formatSalary } from '../utils/formatters';
+import { daysAgo, formatSalary, pluralize } from '../utils/formatters';
+import { getApiErrorMessage } from '../utils/apiError';
+import { notifyCountsChanged } from '../utils/events';
 import { isLegacyCompanyName, resolveRecruiterCompany } from '../utils/recruiterCompany';
 import { buildAiDefaults, scrubGlobalcoFromDescription, EXPERIENCE_LEVELS } from '../utils/jobFormDefaults';
-import { STATUS_CHART_COLORS, formatStatus } from '../utils/applicationStatus';
+import { matchScoreClass } from '../utils/applicationStatus';
 
-const QUICK_STATUSES = ['SHORTLISTED', 'REJECTED', 'INTERVIEW_SCHEDULED', 'HIRED'];
+const ApplicantStatusChart = lazy(() => import('../components/ApplicantStatusChart'));
+const RecruiterOverviewCharts = lazy(() => import('../components/RecruiterOverviewCharts'));
+
+const APPLICANTS_PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const DASHBOARD_TABS = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -49,92 +55,151 @@ function StatTile({ value, label, className }) {
   );
 }
 
+function fetchOverview() {
+  return Promise.allSettled([api.get('/api/admin/dashboard'), api.get('/api/admin/jobs')]);
+}
+
+function ChartFallback() {
+  return <Skeleton className="h-72 w-full rounded-xl lg:col-span-2" />;
+}
+
 export default function AdminDashboard() {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') || 'overview';
+  const urlSearch = searchParams.get('q') || '';
+  const jobFilter = searchParams.get('job') || '';
+  const applicantPageParam = Math.max(0, Number(searchParams.get('page')) || 0);
+
   const [dashboard, setDashboard] = useState(null);
-  const [applicants, setApplicants] = useState([]);
+  const [applicantsData, setApplicantsData] = useState({ key: null, content: [], totalPages: 0, totalElements: 0 });
   const [jobs, setJobs] = useState([]);
   const [aiForm, setAiForm] = useState(() => buildAiDefaults(user));
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [jobFilter, setJobFilter] = useState('');
+  const [searchInput, setSearchInput] = useState(urlSearch);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const profileKey = `${user?.companyName ?? ''}|${user?.location ?? ''}`;
-  const [prevProfileKey, setPrevProfileKey] = useState(profileKey);
-  if (user && profileKey !== prevProfileKey) {
-    setPrevProfileKey(profileKey);
-    setAiForm((prev) => ({
-      ...prev,
-      company: resolveRecruiterCompany(user, prev.company),
-      location: user.location?.trim() || prev.location,
-    }));
+  const [prevLocation, setPrevLocation] = useState(user?.location ?? '');
+  if (user && (user.location ?? '') !== prevLocation) {
+    setPrevLocation(user.location ?? '');
+    setAiForm((prev) => ({ ...prev, location: user.location?.trim() || prev.location }));
   }
 
-  const load = useCallback(async () => {
-    const [dash, apps, jobList] = await Promise.allSettled([
-      api.get('/api/admin/dashboard'),
-      api.get('/api/admin/applicants'),
-      api.get('/api/admin/jobs'),
-    ]);
+  const [prevUrlSearch, setPrevUrlSearch] = useState(urlSearch);
+  if (urlSearch !== prevUrlSearch) {
+    setPrevUrlSearch(urlSearch);
+    setSearchInput(urlSearch);
+  }
+
+  const updateParams = useCallback((changes) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      Object.entries(changes).forEach(([key, value]) => {
+        if (value === '' || value == null || (key === 'page' && Number(value) === 0)) next.delete(key);
+        else next.set(key, String(value));
+      });
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const applyOverview = useCallback(([dash, jobList]) => {
     if (dash.status === 'fulfilled') setDashboard(unwrap(dash.value));
-    if (apps.status === 'fulfilled') setApplicants(unwrap(apps.value) || []);
     if (jobList.status === 'fulfilled') setJobs(unwrap(jobList.value) || []);
-    if ([dash, apps, jobList].some((r) => r.status === 'rejected')) {
+    if ([dash, jobList].some((r) => r.status === 'rejected')) {
       toast.error('Some dashboard data failed to load');
     }
     setLoading(false);
   }, []);
 
+  const load = useCallback(() => fetchOverview().then(applyOverview), [applyOverview]);
+
   useEffect(() => {
-    Promise.resolve(refreshUser?.()).catch(() => {}).finally(load);
-  }, [refreshUser, load]);
+    fetchOverview().then(applyOverview);
+    refreshUser().catch(() => {});
+  }, [refreshUser, applyOverview]);
+
+  useEffect(() => {
+    if (searchInput === urlSearch) return undefined;
+    const timer = setTimeout(() => updateParams({ q: searchInput.trim(), page: 0 }), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchInput, urlSearch, updateParams]);
+
+  const applicantsKey = `${applicantPageParam}|${urlSearch}|${jobFilter}|${refreshKey}`;
+  const applicantsLoading = tab === 'applicants' && applicantsData.key !== applicantsKey;
+
+  useEffect(() => {
+    if (tab !== 'applicants') return undefined;
+    let cancelled = false;
+    api.get('/api/admin/applicants', {
+      params: {
+        page: applicantPageParam,
+        size: APPLICANTS_PAGE_SIZE,
+        search: urlSearch.trim() || undefined,
+        jobId: jobFilter || undefined,
+      },
+    })
+      .then((res) => {
+        if (cancelled) return;
+        const data = unwrap(res) || {};
+        setApplicantsData({
+          key: applicantsKey,
+          content: data.content || [],
+          totalPages: data.totalPages ?? 0,
+          totalElements: data.totalElements ?? 0,
+        });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        toast.error(getApiErrorMessage(err, 'Could not load applicants'));
+        setApplicantsData((prev) => ({ ...prev, key: applicantsKey }));
+      });
+    return () => { cancelled = true; };
+  }, [tab, applicantsKey, applicantPageParam, urlSearch, jobFilter]);
+
+  const applicants = applicantsData.content;
 
   const switchTab = (key) => {
     setSearchParams(key === 'overview' ? {} : { tab: key });
+  };
+
+  const refreshAfterChange = () => {
+    load();
+    setRefreshKey((k) => k + 1);
+    notifyCountsChanged();
   };
 
   const deleteJob = async (id) => {
     try {
       await api.delete(`/api/jobs/${id}`);
       toast.success('Job deleted');
-      load();
+      if (jobFilter === String(id)) updateParams({ job: '', page: 0 });
+      refreshAfterChange();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to delete job');
+      toast.error(getApiErrorMessage(err, 'Failed to delete job'));
     }
   };
 
-  const updateStatus = async (id, status) => {
-    try {
-      await api.patch(`/api/applications/${id}/status`, { status });
-      setApplicants((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
-      toast.success(`Status updated to ${formatStatus(status)}`);
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to update status');
-    }
-  };
+  const company = resolveRecruiterCompany(user, '');
 
   const generateDescription = async () => {
     if (!aiForm.jobTitle?.trim() || !aiForm.skills?.trim()) {
       return toast.error('Job title and skills are required');
     }
-    const company = resolveRecruiterCompany(user, aiForm.company);
     if (!company) {
-      return toast.error('Set Company Name in Profile (Admin → Profile), then try again');
+      return toast.error('Set your company name in your Profile, then try again');
     }
     setGenerating(true);
     try {
-      const res = await api.post('/api/ai/generate-job-description', { ...aiForm, company });
+      const res = await api.post('/api/ai/generate-job-description', aiForm);
       const description = unwrap(res).description;
       navigate('/admin/jobs/new', {
         state: {
           jobForm: {
             title: aiForm.jobTitle,
             skills: aiForm.skills,
-            company,
             location: aiForm.location || user?.location?.trim() || '',
             experienceLevel: aiForm.experienceLevel || 'Mid-Level',
             description: scrubGlobalcoFromDescription(description, company),
@@ -142,49 +207,23 @@ export default function AdminDashboard() {
             category: 'Engineering',
             salaryMin: '',
             salaryMax: '',
-            featured: false,
           },
         },
       });
       toast.success('AI description generated — review and publish your job');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'AI generation failed');
+      toast.error(getApiErrorMessage(err, 'AI generation failed'));
     } finally {
       setGenerating(false);
     }
   };
 
-  const syncCompanyFromProfile = async () => {
-    try {
-      const fresh = await refreshUser();
-      const company = resolveRecruiterCompany(fresh, '');
-      if (!company) {
-        return toast.error('Update Company Name in your Profile (e.g. XPO)');
-      }
-      setAiForm((f) => ({ ...f, company, location: fresh.location?.trim() || f.location }));
-      toast.success(`Company set to ${company}`);
-    } catch {
-      toast.error('Could not load your profile');
-    }
-  };
-
   const profileCompanyMissing = user && isLegacyCompanyName(user.companyName);
-
-  const filteredApplicants = applicants.filter((app) => {
-    const matchesJob = !jobFilter || String(app.jobId) === jobFilter;
-    const q = searchQuery.trim().toLowerCase();
-    const matchesSearch = !q
-      || app.userName?.toLowerCase().includes(q)
-      || app.userEmail?.toLowerCase().includes(q)
-      || app.jobTitle?.toLowerCase().includes(q);
-    return matchesJob && matchesSearch;
-  });
 
   if (loading) return <LoadingSpinner fullScreen />;
 
-  const categoryData = Object.entries(dashboard?.jobsByCategory || {}).map(([name, value]) => ({ name, value }));
-  const statusData = Object.entries(dashboard?.applicationsByStatus || {}).map(([name, value]) => ({ name, value }));
-  const pageTitle = tab === 'messages' ? 'Messages' : tab === 'profile' ? 'Profile' : 'Admin Dashboard';
+  const pageTitle = tab === 'messages' ? 'Messages' : tab === 'profile' ? 'Profile' : 'Recruiter Dashboard';
+  const applicantBackTo = `${location.pathname}${location.search}`;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
@@ -192,13 +231,15 @@ export default function AdminDashboard() {
 
       {!NAV_ONLY_TABS.includes(tab) && (
         <Tabs value={tab} onValueChange={switchTab} className="mt-6">
-          <TabsList className="h-auto w-full flex-wrap justify-start gap-1 sm:w-fit">
-            {DASHBOARD_TABS.map(({ key, label, icon: Icon }) => (
-              <TabsTrigger key={key} value={key} className="h-9 flex-none px-3">
-                <Icon /> {label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          <div className="-mx-4 overflow-x-auto overflow-y-hidden px-4 py-1 sm:mx-0 sm:px-0">
+            <TabsList className="w-max">
+              {DASHBOARD_TABS.map(({ key, label, icon: Icon }) => (
+                <TabsTrigger key={key} value={key} className="flex-none px-3">
+                  <Icon /> {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
         </Tabs>
       )}
 
@@ -229,47 +270,12 @@ export default function AdminDashboard() {
               <StatTile value={dashboard.pendingApplications} label="Pending Review" className="bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300" />
             </CardContent>
           </Card>
-          {categoryData.length > 0 && (
-            <Card className="lg:col-span-2">
-              <CardHeader><CardTitle>Jobs by Category</CardTitle></CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={categoryData}>
-                    <XAxis dataKey="name" {...chartAxisProps} />
-                    <YAxis allowDecimals={false} {...chartAxisProps} />
-                    <Tooltip {...chartTooltipProps} />
-                    <Bar dataKey="value" name="Jobs" fill="var(--primary)" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          )}
-          {statusData.length > 0 && (
-            <Card className="lg:col-span-2">
-              <CardHeader><CardTitle>Applications by Status</CardTitle></CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={250}>
-                  <PieChart>
-                    <Pie
-                      data={statusData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      stroke="var(--card)"
-                      label={({ name, value }) => `${formatStatus(name)}: ${value}`}
-                    >
-                      {statusData.map((entry) => (
-                        <Cell key={entry.name} fill={STATUS_CHART_COLORS[entry.name] || '#64748b'} />
-                      ))}
-                    </Pie>
-                    <Tooltip {...chartTooltipProps} formatter={(value, name) => [value, formatStatus(name)]} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          )}
+          <Suspense fallback={<ChartFallback />}>
+            <RecruiterOverviewCharts
+              jobsByCategory={dashboard.jobsByCategory}
+              applicationsByStatus={dashboard.applicationsByStatus}
+            />
+          </Suspense>
         </div>
       )}
 
@@ -306,7 +312,7 @@ export default function AdminDashboard() {
                           ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
                           : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}
                       >
-                        {job.status}
+                        {job.status === 'OPEN' ? 'Open' : 'Closed'}
                       </Badge>
                       {job.featured && <Badge className="bg-accent text-accent-foreground">Featured</Badge>}
                     </div>
@@ -325,7 +331,7 @@ export default function AdminDashboard() {
                         </Button>
                       }
                       title="Delete this job posting?"
-                      description={`"${job.title}" and its listing will be permanently removed.`}
+                      description={`"${job.title}" will be removed and its open applications closed. Candidates are notified.`}
                       confirmLabel="Delete"
                       destructive
                       onConfirm={() => deleteJob(job.id)}
@@ -339,24 +345,23 @@ export default function AdminDashboard() {
       )}
 
       {tab === 'applicants' && (
-        <div className="mt-8 space-y-8">
-          <ApplicantStatusChart />
-
+        <div className="mt-8 space-y-6">
           <div className="flex flex-col gap-3 sm:flex-row">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Search by name, email, or job title..."
                 aria-label="Search applicants"
+                maxLength={100}
                 className="h-10 pl-10"
               />
             </div>
             <SelectField
               value={jobFilter}
-              onValueChange={setJobFilter}
+              onValueChange={(value) => updateParams({ job: value, page: 0 })}
               options={jobs.map((j) => ({ value: String(j.id), label: j.title }))}
               emptyLabel="All Jobs"
               aria-label="Filter by job"
@@ -364,11 +369,15 @@ export default function AdminDashboard() {
             />
           </div>
 
-          <div className="space-y-4">
-            {filteredApplicants.length === 0 ? (
-              <EmptyState icon={Users} title="No applications found" description={searchQuery || jobFilter ? 'Try a different search or job filter.' : 'Applications to your jobs will appear here.'} />
+          <p className="text-sm text-muted-foreground" aria-live="polite">
+            {applicantsLoading ? 'Loading applicants…' : pluralize(applicantsData.totalElements, 'application')}
+          </p>
+
+          <div className={cn('space-y-4', applicantsLoading && 'opacity-60')} aria-busy={applicantsLoading}>
+            {applicants.length === 0 && !applicantsLoading ? (
+              <EmptyState icon={Users} title="No applications found" description={urlSearch || jobFilter ? 'Try a different search or job filter. Names are searchable once you have opened an application.' : 'Applications to your jobs will appear here.'} />
             ) : (
-              filteredApplicants.map((app) => (
+              applicants.map((app) => (
                 <Card key={app.id} className="gap-0 p-5">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
@@ -376,7 +385,7 @@ export default function AdminDashboard() {
                         <p className="text-lg font-semibold">{app.userName}</p>
                         <StatusBadge status={app.status} className="py-0.5" />
                         {app.matchScore != null && (
-                          <Badge className="bg-emerald-100 px-3 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                          <Badge className={cn('px-3', matchScoreClass(app.matchScore))}>
                             {app.matchScore}% match
                           </Badge>
                         )}
@@ -395,35 +404,47 @@ export default function AdminDashboard() {
                     </div>
 
                     <Button asChild>
-                      <Link to={`/admin/applicants/${app.id}`}><Eye /> View Application</Link>
+                      <Link to={`/admin/applicants/${app.id}`} state={{ backTo: applicantBackTo }}><Eye /> View Application</Link>
                     </Button>
                   </div>
 
                   <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-4">
                     <span className="mr-1 text-xs text-muted-foreground">Quick actions:</span>
-                    {QUICK_STATUSES.map((s) => (
-                      <Button
-                        key={s}
-                        type="button"
-                        variant="outline"
-                        size="xs"
-                        disabled={app.status === s || app.status === 'WITHDRAWN'}
-                        onClick={() => updateStatus(app.id, s)}
-                      >
-                        {formatStatus(s)}
-                      </Button>
-                    ))}
+                    <ApplicationStatusActions
+                      applicationId={app.id}
+                      status={app.status}
+                      size="xs"
+                      onChanged={(status) => {
+                        setApplicantsData((prev) => ({
+                          ...prev,
+                          content: prev.content.map((a) => (a.id === app.id ? { ...a, status } : a)),
+                        }));
+                        refreshAfterChange();
+                      }}
+                    />
                   </div>
                 </Card>
               ))
             )}
           </div>
+
+          <Pagination
+            page={applicantPageParam}
+            totalPages={applicantsData.totalPages}
+            onPageChange={(page) => updateParams({ page })}
+          />
+
+          <Suspense fallback={<ChartFallback />}>
+            <ApplicantStatusChart refreshKey={refreshKey} />
+          </Suspense>
         </div>
       )}
 
-      <div className={tab === 'messages' ? 'mt-8 overflow-hidden' : 'hidden'} aria-hidden={tab !== 'messages'}>
-        <ChatPanel embedded onUnreadChange={() => {}} />
-      </div>
+      {tab === 'messages' && (
+        <div className="mt-8 overflow-hidden">
+          <ChatPanel embedded onUnreadChange={notifyCountsChanged} />
+        </div>
+      )}
 
       {tab === 'profile' && (
         <div className="mt-8 max-w-2xl">
@@ -449,20 +470,19 @@ export default function AdminDashboard() {
             >
               <div className="space-y-2">
                 <Label htmlFor="ai-title">Job title <span className="text-destructive">*</span></Label>
-                <Input id="ai-title" placeholder="e.g. Java Full Stack Developer" value={aiForm.jobTitle} onChange={(e) => setAiForm({ ...aiForm, jobTitle: e.target.value })} required />
+                <Input id="ai-title" placeholder="e.g. Java Full Stack Developer" maxLength={150} value={aiForm.jobTitle} onChange={(e) => setAiForm({ ...aiForm, jobTitle: e.target.value })} required />
               </div>
               <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <Label htmlFor="ai-company">Company <span className="text-destructive">*</span></Label>
-                  <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={syncCompanyFromProfile}>
-                    Sync from profile
-                  </Button>
-                </div>
-                <Input id="ai-company" placeholder="Your company name" value={aiForm.company} onChange={(e) => setAiForm({ ...aiForm, company: e.target.value })} required />
+                <Label htmlFor="ai-company">Company</Label>
+                <Input id="ai-company" value={company} readOnly disabled placeholder="Not set" />
+                <p className={cn('text-xs', company ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-400')}>
+                  {company ? 'From your profile. ' : 'Set your company name in your profile first. '}
+                  <Link to="/admin?tab=profile" className="underline">Edit profile</Link>
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="ai-location">Location</Label>
-                <Input id="ai-location" placeholder="Hyderabad / Remote" value={aiForm.location} onChange={(e) => setAiForm({ ...aiForm, location: e.target.value })} />
+                <Input id="ai-location" placeholder="Hyderabad / Remote" maxLength={150} value={aiForm.location} onChange={(e) => setAiForm({ ...aiForm, location: e.target.value })} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="ai-experience">Experience level</Label>
@@ -475,9 +495,9 @@ export default function AdminDashboard() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="ai-skills">Skills (comma separated) <span className="text-destructive">*</span></Label>
-                <Input id="ai-skills" placeholder="Java, Spring Boot, React" value={aiForm.skills} onChange={(e) => setAiForm({ ...aiForm, skills: e.target.value })} required />
+                <Input id="ai-skills" placeholder="Java, Spring Boot, React" maxLength={1000} value={aiForm.skills} onChange={(e) => setAiForm({ ...aiForm, skills: e.target.value })} required />
               </div>
-              <Button type="submit" disabled={generating}>
+              <Button type="submit" disabled={generating || !company}>
                 {generating ? <Loader2 className="animate-spin" /> : <Sparkles />}
                 {generating ? 'Generating…' : 'Generate & Open Job Form'}
               </Button>

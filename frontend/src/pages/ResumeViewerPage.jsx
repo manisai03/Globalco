@@ -2,28 +2,25 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { Download, FileText, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '../context/auth';
 import api from '../services/api';
-import { authStorage, migrateFromLocalStorage } from '../services/authStorage';
-
-function getPrecheckError(subfolder, filename) {
-  migrateFromLocalStorage();
-  if (!authStorage.getToken()) return 'login';
-  if (!subfolder || !filename) return 'Invalid resume link.';
-  return null;
-}
 
 export default function ResumeViewerPage() {
   const [searchParams] = useSearchParams();
+  const { user, loading: authLoading } = useAuth();
   const subfolder = searchParams.get('subfolder');
   const filename = searchParams.get('filename');
   const fileKey = `${subfolder}/${filename}`;
-  const [precheckError] = useState(() => getPrecheckError(subfolder, filename));
+  const precheckError = authLoading ? null
+    : !user ? 'login'
+      : !subfolder || !filename ? 'Invalid resume link.'
+        : null;
   const [result, setResult] = useState({ key: null, blobUrl: null, error: null });
 
   const isPdf = filename?.toLowerCase().endsWith('.pdf');
 
   useEffect(() => {
-    if (precheckError) return undefined;
+    if (authLoading || precheckError) return undefined;
     let objectUrl;
     let cancelled = false;
     api
@@ -32,14 +29,17 @@ export default function ResumeViewerPage() {
         objectUrl = URL.createObjectURL(res.data);
         if (!cancelled) setResult({ key: `${subfolder}/${filename}`, blobUrl: objectUrl, error: null });
       })
-      .catch(() => {
-        if (!cancelled) setResult({ key: `${subfolder}/${filename}`, blobUrl: null, error: 'Unable to load resume. The file may have been removed.' });
+      .catch((err) => {
+        const message = err.response?.status === 404
+          ? 'This resume is not available. It may have been replaced, or you may not have access to it.'
+          : 'Unable to load the resume right now. Check your connection and try again.';
+        if (!cancelled) setResult({ key: `${subfolder}/${filename}`, blobUrl: null, error: message });
       });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [subfolder, filename, precheckError]);
+  }, [subfolder, filename, authLoading, precheckError]);
 
   const current = result.key === fileKey ? result : { blobUrl: null, error: null };
   const error = precheckError || current.error;

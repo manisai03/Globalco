@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: ai-service
+  config:
+    import: classpath:jobboard-shared.yml
+
+server:
+  port: ${PORT:9006}
+
+app:
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    enabled: ${OPENAI_ENABLED:false}

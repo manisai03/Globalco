@@ -5,16 +5,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { chartTooltipProps } from '@/lib/chart';
 import api, { unwrap } from '../services/api';
-import { STATUS_CHART_COLORS } from '../utils/applicationStatus';
-
-const STATUS_LABELS = {
-  PENDING: 'Pending Review',
-  SHORTLISTED: 'Shortlisted',
-  REJECTED: 'Rejected',
-  INTERVIEW_SCHEDULED: 'Interview Round',
-  HIRED: 'Hired',
-  WITHDRAWN: 'Withdrawn',
-};
+import { STATUS_CHART_COLORS, formatStatus } from '../utils/applicationStatus';
+import { pluralize } from '../utils/formatters';
 
 const PERIODS = [
   { key: 'week', label: 'This Week' },
@@ -22,26 +14,27 @@ const PERIODS = [
   { key: 'year', label: 'This Year' },
 ];
 
-export default function ApplicantStatusChart() {
+export default function ApplicantStatusChart({ refreshKey = 0 }) {
   const [period, setPeriod] = useState('month');
-  const [result, setResult] = useState({ period: null, data: null });
+  const [result, setResult] = useState({ key: null, data: null, failed: false });
+  const requestKey = `${period}|${refreshKey}`;
 
   useEffect(() => {
     let cancelled = false;
     api.get(`/api/admin/analytics/applications?period=${period}`)
-      .then((res) => { if (!cancelled) setResult({ period, data: unwrap(res) }); })
-      .catch(() => { if (!cancelled) setResult({ period, data: null }); });
+      .then((res) => { if (!cancelled) setResult({ key: requestKey, data: unwrap(res), failed: false }); })
+      .catch(() => { if (!cancelled) setResult({ key: requestKey, data: null, failed: true }); });
     return () => { cancelled = true; };
-  }, [period]);
+  }, [period, requestKey]);
 
-  const loading = result.period !== period;
+  const loading = result.key !== requestKey;
   const data = loading ? null : result.data;
 
   const chartData = data
     ? Object.entries(data.statusBreakdown || {})
         .filter(([, count]) => count > 0)
         .map(([status, count]) => ({
-          name: STATUS_LABELS[status] || status,
+          name: formatStatus(status),
           value: count,
           status,
         }))
@@ -52,7 +45,11 @@ export default function ApplicantStatusChart() {
       <CardHeader>
         <CardTitle>Applicant Status Breakdown</CardTitle>
         <CardDescription>
-          {loading ? 'Loading…' : `${data?.total ?? 0} applications · ${data?.periodLabel ?? ''}`}
+          {loading
+            ? 'Loading…'
+            : result.failed
+              ? 'Could not load statistics'
+              : `${pluralize(data?.total ?? 0, 'application')} · ${data?.periodLabel ?? ''}`}
         </CardDescription>
         <CardAction>
           <Tabs value={period} onValueChange={setPeriod}>
@@ -73,6 +70,8 @@ export default function ApplicantStatusChart() {
               {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-9" />)}
             </div>
           </div>
+        ) : result.failed ? (
+          <p className="py-16 text-center text-sm text-muted-foreground">Statistics are unavailable right now. Try again in a moment.</p>
         ) : chartData.length === 0 ? (
           <p className="py-16 text-center text-sm text-muted-foreground">No applications in this period.</p>
         ) : (
@@ -95,7 +94,7 @@ export default function ApplicantStatusChart() {
                     <Cell key={entry.status} fill={STATUS_CHART_COLORS[entry.status] || '#64748b'} />
                   ))}
                 </Pie>
-                <Tooltip {...chartTooltipProps} formatter={(value, name) => [`${value} applicants`, name]} />
+                <Tooltip {...chartTooltipProps} formatter={(value, name) => [pluralize(value, 'applicant'), name]} />
               </PieChart>
             </ResponsiveContainer>
 

@@ -1,12 +1,25 @@
 /**
- * Persists auth per tab. Falls back to localStorage if sessionStorage is blocked
- * (some mobile browsers / private mode).
+ * Persists auth per tab in sessionStorage, so the token is gone when the tab closes. Falls back to localStorage
+ * only if sessionStorage is blocked (some mobile browsers / private mode). New tabs get the session from an open
+ * tab over a BroadcastChannel (see sessionSync.js), never from persistent storage.
  */
-const primary = sessionStorage;
-const fallback = localStorage;
 const PREFIX = 'jb_';
+export const AUTH_TOKEN_STORAGE_KEY = `${PREFIX}token`;
 
-function read(store, key) {
+function sessionStorageWorks() {
+  try {
+    const probe = `${PREFIX}probe`;
+    sessionStorage.setItem(probe, '1');
+    sessionStorage.removeItem(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const store = sessionStorageWorks() ? sessionStorage : localStorage;
+
+function read(key) {
   try {
     return store.getItem(PREFIX + key);
   } catch {
@@ -14,27 +27,23 @@ function read(store, key) {
   }
 }
 
-function write(store, key, value) {
+function write(key, value) {
   try {
     store.setItem(PREFIX + key, value);
-    return true;
-  } catch {
-    return false;
-  }
+  } catch { /* storage full or blocked */ }
 }
 
 export const authStorage = {
   getToken() {
-    return read(primary, 'token') || read(fallback, 'token');
+    return read('token');
   },
 
   setToken(token) {
-    write(fallback, 'token', token);
-    write(primary, 'token', token);
+    write('token', token);
   },
 
   getUser() {
-    const raw = read(primary, 'user') || read(fallback, 'user');
+    const raw = read('user');
     if (!raw) return null;
     try {
       return JSON.parse(raw);
@@ -44,48 +53,34 @@ export const authStorage = {
   },
 
   setUser(user) {
-    const json = JSON.stringify(user);
-    write(fallback, 'user', json);
-    write(primary, 'user', json);
+    write('user', JSON.stringify(user));
   },
 
   clear() {
-    for (const store of [primary, fallback]) {
-      try {
-        store.removeItem(PREFIX + 'token');
-        store.removeItem(PREFIX + 'user');
-      } catch { /* ignore */ }
-    }
-    // Legacy keys
     try {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      store.removeItem(PREFIX + 'token');
+      store.removeItem(PREFIX + 'user');
     } catch { /* ignore */ }
   },
 };
 
-// One-time migration from old unprefixed keys + sync session auth for new tabs
-export function migrateFromLocalStorage() {
-  const legacyToken = localStorage.getItem('token');
-  const legacyUser = localStorage.getItem('user');
-  if (!authStorage.getToken() && legacyToken) {
-    authStorage.setToken(legacyToken);
-    if (legacyUser) {
-      try {
-        authStorage.setUser(JSON.parse(legacyUser));
-      } catch { /* ignore corrupt legacy data */ }
+/**
+ * Earlier versions mirrored the session (and before that, an unprefixed token) into localStorage. Adopt it once
+ * so nobody is signed out by the upgrade, then delete it so the token no longer outlives the browser session.
+ */
+export function migrateLegacyStorage() {
+  if (store === localStorage) return;
+  try {
+    const token = localStorage.getItem(`${PREFIX}token`) || localStorage.getItem('token');
+    const user = localStorage.getItem(`${PREFIX}user`) || localStorage.getItem('user');
+    if (token && !authStorage.getToken()) {
+      authStorage.setToken(token);
+      if (user) write('user', user);
     }
-  }
-  try {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    for (const key of [`${PREFIX}token`, `${PREFIX}user`, 'token', 'user']) localStorage.removeItem(key);
   } catch { /* ignore */ }
+}
 
-  // New tabs cannot read sessionStorage — mirror active session into localStorage
-  try {
-    const sessionToken = primary.getItem(PREFIX + 'token');
-    const sessionUser = primary.getItem(PREFIX + 'user');
-    if (sessionToken) fallback.setItem(PREFIX + 'token', sessionToken);
-    if (sessionUser) fallback.setItem(PREFIX + 'user', sessionUser);
-  } catch { /* ignore */ }
+export function accountKey(user) {
+  return user?.id != null && user?.role ? `${user.role}:${user.id}` : null;
 }

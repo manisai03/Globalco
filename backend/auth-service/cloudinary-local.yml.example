@@ -1,0 +1,10 @@
+# Copy to cloudinary-local.yml in this folder and fill in your credentials (the copy is gitignored).
+# Used only for profile pictures; everything else works without it.
+# Dashboard: https://console.cloudinary.com -> Settings -> API Keys (cloud name, API key, API secret)
+# In Docker/production set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET instead.
+app:
+  cloudinary:
+    cloud-name: your-cloud-name
+    api-key: your-api-key
+    api-secret: your-api-secret
+    folder: job-board/avatars

@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: notification-service
+  config:
+    import: classpath:jobboard-shared.yml,optional:file:./mail-local.yml
+  datasource:
+    url: ${NOTIFICATION_DB_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/jobboard_notifications?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+  mail:
+    host: ${MAIL_HOST:smtp-relay.brevo.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
+
+server:
+  port: ${PORT:9005}
+
+app:
+  mail:
+    from: ${MAIL_FROM:${MAIL_USERNAME:noreply@jobboard.app}}
+    # Local dev only: write the OTP to the log when no email provider is configured.
+    log-otp-when-unconfigured: ${LOG_OTP_WHEN_UNCONFIGURED:false}
+  brevo:
+    api-key: ${BREVO_API_KEY:}

@@ -1,4 +1,4 @@
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
   Briefcase, Moon, Sun, Bell, MessageSquare, Menu,
@@ -13,11 +13,12 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/auth';
+import { useTheme } from '../context/theme';
 import api, { unwrap } from '../services/api';
 import { chatSocket } from '../services/chatSocket';
 import { APP_NAME } from '../utils/appBranding';
+import { COUNTS_CHANGED_EVENT } from '../utils/events';
 
 function isNavActive(item, location) {
   const [path, query = ''] = item.to.split('?');
@@ -39,7 +40,7 @@ function isNavActive(item, location) {
 function NavItem({ item, active, onClick }) {
   const { to, label, icon: Icon, badge } = item;
   return (
-    <NavLink
+    <Link
       to={to}
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
@@ -57,7 +58,7 @@ function NavItem({ item, active, onClick }) {
           {badge > 9 ? '9+' : badge}
         </span>
       )}
-    </NavLink>
+    </Link>
   );
 }
 
@@ -76,9 +77,11 @@ export default function Navbar() {
   const [notifCount, setNotifCount] = useState(0);
   const [msgCount, setMsgCount] = useState(0);
 
+  const userId = user?.id;
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     const fetchCounts = async () => {
+      if (document.hidden) return;
       try {
         const [n, m] = await Promise.all([
           api.get('/api/notifications/unread-count'),
@@ -89,18 +92,17 @@ export default function Navbar() {
       } catch { /* ignore */ }
     };
     fetchCounts();
-    const interval = setInterval(fetchCounts, 10000);
-    const onFocus = () => fetchCounts();
+    const interval = setInterval(fetchCounts, 30000);
     const offSocket = chatSocket.onMessage(() => fetchCounts());
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onFocus);
+    document.addEventListener('visibilitychange', fetchCounts);
+    window.addEventListener(COUNTS_CHANGED_EVENT, fetchCounts);
     return () => {
       clearInterval(interval);
       offSocket();
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onFocus);
+      document.removeEventListener('visibilitychange', fetchCounts);
+      window.removeEventListener(COUNTS_CHANGED_EVENT, fetchCounts);
     };
-  }, [user]);
+  }, [userId]);
 
   const handleLogout = () => {
     logout();
@@ -113,7 +115,7 @@ export default function Navbar() {
     { to: '/', label: 'Home', icon: Home, show: true },
     { to: '/jobs', label: 'Jobs', icon: Briefcase, show: true },
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, show: user && !isAdmin, activePath: '/dashboard', activeTab: 'applications' },
-    { to: '/admin', label: 'Admin', icon: Shield, show: user && isAdmin, activePath: '/admin', activeTab: 'overview' },
+    { to: '/admin', label: 'Recruiter', icon: Shield, show: user && isAdmin, activePath: '/admin', activeTab: 'overview' },
     { to: isAdmin ? '/admin?tab=messages' : '/dashboard?tab=messages', label: 'Messages', icon: MessageSquare, show: !!user, badge: msgCount, activeTab: 'messages' },
     { to: '/notifications', label: 'Notifications', icon: Bell, show: !!user, badge: notifCount },
     { to: profileHref, label: 'Profile', icon: User, show: !!user, activeTab: 'profile' },
@@ -159,7 +161,7 @@ export default function Navbar() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={() => navigate(isAdmin ? '/admin' : '/dashboard')}>
                     {isAdmin ? <Shield /> : <LayoutDashboard />}
-                    {isAdmin ? 'Admin' : 'Dashboard'}
+                    {isAdmin ? 'Recruiter dashboard' : 'Dashboard'}
                   </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => navigate(profileHref)}>
                     <User />

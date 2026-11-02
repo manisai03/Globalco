@@ -1,6 +1,10 @@
 const PHONE_RE = /^[+]?[\d\s-]{10,15}$/;
 const URL_RE = /^https?:\/\/.+/i;
 
+// Must match PasswordRules in the backend common module.
+export const PASSWORD_MIN = 8;
+export const PASSWORD_MAX = 72;
+
 export function validateEmail(email) {
   if (!email?.trim()) return 'Email is required';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid email address';
@@ -9,7 +13,8 @@ export function validateEmail(email) {
 
 export function validatePassword(password) {
   if (!password) return 'Password is required';
-  if (password.length < 6) return 'Password must be at least 6 characters';
+  if (password.length < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters`;
+  if (password.length > PASSWORD_MAX) return `Password must be at most ${PASSWORD_MAX} characters`;
   return null;
 }
 
@@ -83,6 +88,8 @@ export function validateRegister(form, isRecruiter) {
     if (cn) errors.companyName = cn;
     const rt = validateRequired(form.recruiterTitle, 'Your Role / Title');
     if (rt) errors.recruiterTitle = rt;
+    const web = validateUrl(form.companyWebsite);
+    if (web) errors.companyWebsite = web;
   }
 
   return errors;

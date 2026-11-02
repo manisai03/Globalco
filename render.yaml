@@ -1,33 +1,174 @@
+# Render Blueprint for the microservices backend (backend/).
+# Only the API gateway is public; the registry and the six services are private services on Render's
+# internal network. Every service builds from backend/Dockerfile; Render passes the MODULE env var
+# to the build as a build argument, which selects the module.
+#
+# External prerequisites (set the values in the jobboard-shared env group after the first sync):
+#   - MySQL (e.g. Railway). The five databases are created automatically on first start.
+#   - RabbitMQ (e.g. CloudAMQP): host, user, password, vhost; port 5671 with RABBITMQ_SSL=true.
+# Private services are not available on the free plan; see docs/DEPLOYMENT.md for costs and alternatives.
+
+envVarGroups:
+  - name: jobboard-shared
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: INTERNAL_API_TOKEN
+        generateValue: true
+      - key: EUREKA_URL
+        value: http://jobboard-discovery:8761/eureka
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: RABBITMQ_HOST
+        sync: false
+      - key: RABBITMQ_PORT
+        value: "5671"
+      - key: RABBITMQ_SSL
+        value: "true"
+      - key: RABBITMQ_USERNAME
+        sync: false
+      - key: RABBITMQ_PASSWORD
+        sync: false
+      - key: RABBITMQ_VHOST
+        sync: false
+
 services:
-  - type: web
-    name: globalco-job-board-api
+  - type: pserv
+    name: jobboard-discovery
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    plan: free
+    plan: starter
+    autoDeploy: false
+    envVars:
+      - key: MODULE
+        value: discovery-server
+      - key: PORT
+        value: "8761"
+
+  - type: web
+    name: jobboard-gateway
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    autoDeploy: false
     healthCheckPath: /api/public/health
     envVars:
-      - key: SPRING_PROFILES_ACTIVE
-        value: prod
-      - key: JWT_SECRET
-        generateValue: true
+      - key: MODULE
+        value: api-gateway
+      - key: PORT
+        value: "8090"
       - key: CORS_ORIGINS
         sync: false
-      - key: DATABASE_URL
+      - key: TRUST_FORWARDED_FOR
+        value: "true"
+      - fromGroup: jobboard-shared
+
+  - type: pserv
+    name: jobboard-auth
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    autoDeploy: false
+    envVars:
+      - key: MODULE
+        value: auth-service
+      - key: PORT
+        value: "9001"
+      - key: CLOUDINARY_CLOUD_NAME
         sync: false
-      - key: DATABASE_USERNAME
+      - key: CLOUDINARY_API_KEY
         sync: false
-      - key: DATABASE_PASSWORD
+      - key: CLOUDINARY_API_SECRET
         sync: false
-      - key: MAIL_HOST
-        value: smtp-relay.brevo.com
-      - key: MAIL_PORT
-        value: "587"
-      - key: MAIL_USERNAME
+      - fromGroup: jobboard-shared
+
+  - type: pserv
+    name: jobboard-jobs
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    autoDeploy: false
+    envVars:
+      - key: MODULE
+        value: job-service
+      - key: PORT
+        value: "9002"
+      - fromGroup: jobboard-shared
+
+  - type: pserv
+    name: jobboard-applications
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    autoDeploy: false
+    envVars:
+      - key: MODULE
+        value: application-service
+      - key: PORT
+        value: "9003"
+      - fromGroup: jobboard-shared
+
+  - type: pserv
+    name: jobboard-messaging
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    autoDeploy: false
+    envVars:
+      - key: MODULE
+        value: messaging-service
+      - key: PORT
+        value: "9004"
+      - key: CORS_ORIGINS
         sync: false
-      - key: MAIL_PASSWORD
+      - fromGroup: jobboard-shared
+
+  - type: pserv
+    name: jobboard-notifications
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    autoDeploy: false
+    envVars:
+      - key: MODULE
+        value: notification-service
+      - key: PORT
+        value: "9005"
+      - key: BREVO_API_KEY
         sync: false
       - key: MAIL_FROM
         sync: false
-      - key: BREVO_API_KEY
+      - fromGroup: jobboard-shared
+
+  - type: pserv
+    name: jobboard-ai
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    autoDeploy: false
+    envVars:
+      - key: MODULE
+        value: ai-service
+      - key: PORT
+        value: "9006"
+      - key: OPENAI_API_KEY
         sync: false
+      - key: OPENAI_ENABLED
+        value: "false"
+      - fromGroup: jobboard-shared

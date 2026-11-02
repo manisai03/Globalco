@@ -78,7 +78,8 @@ Recruiters and candidates are stored in **separate tables**. Each recruiter only
 2. Backend validates against `users` or `admins` and returns `{ token, user }`.
 3. Frontend stores the token and attaches `Authorization: Bearer <token>` to all API calls.
 4. On 401, storage is cleared and user is sent to `/login`.
-5. WebSocket chat connects automatically after login (`/ws/chat?token=...`).
+5. WebSocket chat connects automatically after login: the client gets a single-use ticket from
+   `POST /api/messages/ws-ticket` and connects to `/ws/chat?ticket=...`.
 
 ### 2.3 Forgot password (OTP)
 
@@ -160,7 +161,7 @@ Profile sections: headline, skills, education, internships, employment, open-to-
 | Saved Jobs | `GET /api/saved-jobs` | Bookmarked listings |
 | Job Alerts | `GET /api/saved-searches` | Saved filter presets + live match count |
 
-**Job alerts:** Save current `/jobs` filters via `POST /api/saved-searches`. Shows how many open jobs match; no automated email yet.
+**Job alerts:** Save current `/jobs` filters via `POST /api/saved-searches`. Shows how many open jobs match. When a matching job is posted the candidate gets an in-app `JOB_ALERT` notification (no email yet); each alert has an on/off switch (`PATCH /api/saved-searches/{id}`).
 
 ### 3.5 Messaging (candidate side)
 
@@ -303,7 +304,7 @@ API: `GET /api/notifications`, `PATCH /api/notifications/{id}/read`, `PATCH /api
 ## 7. Real-time chat workflow
 
 ```
-Login → WebSocket connect ws://<api>/ws/chat?token=<JWT>
+Login → POST /api/messages/ws-ticket → WebSocket connect ws://<api>/ws/chat?ticket=<ticket>
       → POST /api/messages → ChatSocketService pushes to both sessions
       → ChatPanel updates; navbar unread count refreshes
 ```
@@ -354,7 +355,9 @@ erDiagram
 
 Messages and notifications use polymorphic `(account_type, account_id)` — no FK to a single user table (supports both admins and candidates).
 
-Startup repair: `LegacySchemaMigration` + `CompanyDataRepair` fix schema drift and legacy placeholder company names.
+Each table lives in the schema of the service that owns it (accounts in `jobboard_auth`, jobs in `jobboard_jobs`, and so on),
+so the relations above are kept by IDs and RabbitMQ events rather than cross-schema foreign keys; see
+[microservices/ARCHITECTURE.md](microservices/ARCHITECTURE.md).
 
 ---
 
@@ -362,17 +365,18 @@ Startup repair: `LegacySchemaMigration` + `CompanyDataRepair` fix schema drift a
 
 ```
 Developer pushes to main
-    → GitHub Actions CI (build + test backend & frontend)
+    → GitHub Actions CI (mvn verify + docker compose build for services; lint + build frontend)
     → Deploy workflow
-        → curl RENDER_DEPLOY_HOOK (backend redeploy)
+        → curl every RENDER_DEPLOY_HOOKS URL (gateway, discovery, 6 services)
         → vercel deploy --prebuilt (frontend)
 ```
 
 | Component | Host | Config |
 |-----------|------|--------|
-| Frontend | Vercel | Root: `frontend`, `VITE_API_URL` |
-| Backend | Render | `render.yaml`, Docker, MySQL env vars |
-| Database | Railway / Aiven | MySQL 8 |
+| Frontend | Vercel | Root: `frontend`, `VITE_API_URL` = gateway URL |
+| Services | Render | `render.yaml`, `backend/Dockerfile`, `jobboard-shared` env group |
+| Database | Railway / Aiven | MySQL 8 (5 schemas) |
+| Messaging | CloudAMQP | RabbitMQ (`RABBITMQ_*`) |
 | Email | Brevo | `BREVO_API_KEY`, `MAIL_FROM` |
 | Avatars | Cloudinary | Optional env vars |
 

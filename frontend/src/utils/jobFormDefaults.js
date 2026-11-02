@@ -7,7 +7,6 @@ export const EXPERIENCE_LEVELS = ['Entry', 'Mid-Level', 'Senior', 'Lead'];
 export function buildJobDefaults(user) {
   return {
     title: '',
-    company: resolveRecruiterCompany(user, ''),
     description: '',
     location: user?.location?.trim() || '',
     salaryMin: '',
@@ -16,7 +15,6 @@ export function buildJobDefaults(user) {
     jobType: 'Full-time',
     category: 'Engineering',
     skills: '',
-    featured: false,
   };
 }
 
@@ -24,7 +22,6 @@ export function buildAiDefaults(user) {
   return {
     jobTitle: '',
     skills: '',
-    company: resolveRecruiterCompany(user, ''),
     location: user?.location?.trim() || '',
     experienceLevel: 'Mid-Level',
   };
@@ -38,10 +35,9 @@ export function scrubGlobalcoFromDescription(description, company) {
 }
 
 export function jobToForm(job, user) {
-  const company = resolveRecruiterCompany(user, job.company) || job.company;
+  const company = resolveRecruiterCompany(user, '') || job.company;
   return {
     title: job.title,
-    company,
     description: scrubGlobalcoFromDescription(job.description, company),
     location: job.location,
     salaryMin: job.salaryMin || '',
@@ -50,6 +46,5 @@ export function jobToForm(job, user) {
     jobType: job.jobType,
     category: job.category || 'Engineering',
     skills: job.skills || '',
-    featured: job.featured,
   };
 }

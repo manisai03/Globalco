@@ -1,7 +1,8 @@
-target/
-uploads/
+**/target/
+**/uploads/
+**/*-local.yml
+logs/
+.env
+.idea/
+.vscode/
 *.log
-mail-local.yml
-cloudinary-local.yml
-mysql-local.yml
-.mvn/wrapper/maven-wrapper.jar

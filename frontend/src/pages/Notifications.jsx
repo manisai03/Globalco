@@ -7,9 +7,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import api, { unwrap } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 import EmptyState from '../components/common/EmptyState';
 import { getNotificationActionLink } from '../utils/notificationLinks';
+import { notifyCountsChanged } from '../utils/events';
 
 export default function Notifications() {
   const navigate = useNavigate();
@@ -39,6 +40,7 @@ export default function Notifications() {
     try {
       await api.patch('/api/notifications/read-all');
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      notifyCountsChanged();
     } catch {
       toast.error('Failed to mark notifications as read');
     }
@@ -46,7 +48,7 @@ export default function Notifications() {
 
   const openNotification = (n) => {
     if (!n.read) {
-      api.patch(`/api/notifications/${n.id}/read`).catch(() => {});
+      api.patch(`/api/notifications/${n.id}/read`).then(notifyCountsChanged).catch(() => {});
       setNotifications((prev) => prev.map((item) => (item.id === n.id ? { ...item, read: true } : item)));
     }
     navigate(`/notifications/${n.id}`);
@@ -96,7 +98,10 @@ export default function Notifications() {
                 onClick={() => openNotification(n)}
                 className="min-w-0 flex-1 text-left outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-[3px] focus-visible:after:ring-ring/50"
               >
-                <p className="font-medium">{n.title}</p>
+                <p className="font-medium">
+                  {!n.read && <span className="sr-only">Unread: </span>}
+                  {n.title}
+                </p>
                 <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{n.message}</p>
                 <p className="mt-2 text-xs text-muted-foreground">{new Date(n.createdAt).toLocaleString()}</p>
                 {actionLink && actionLink !== `/notifications/${n.id}` && (
@@ -104,7 +109,7 @@ export default function Notifications() {
                 )}
               </button>
               <div className="relative z-10 flex shrink-0 items-start gap-2">
-                {!n.read && <span className="mt-1.5 size-2 rounded-full bg-primary" aria-label="Unread" />}
+                {!n.read && <span className="mt-1.5 size-2 rounded-full bg-primary" aria-hidden="true" />}
                 {n.read ? (
                   <Tooltip>
                     <TooltipTrigger asChild>

@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: discovery-server
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:20s}
+
+server:
+  port: ${PORT:8761}
+  shutdown: graceful
+
+eureka:
+  instance:
+    hostname: ${EUREKA_HOSTNAME:localhost}
+  client:
+    register-with-eureka: false
+    fetch-registry: false
+  server:
+    # Single-node registry for local/dev; don't drop instances during brief restarts.
+    enable-self-preservation: false
+    eviction-interval-timer-in-ms: 10000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

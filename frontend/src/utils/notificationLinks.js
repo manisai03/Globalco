@@ -5,6 +5,7 @@ export function getNotificationActionLink(notification, user) {
 
   switch (type) {
     case 'NEW_APPLICATION':
+    case 'APPLICATION_WITHDRAWN':
       return isAdmin && referenceId ? `/admin/applicants/${referenceId}` : null;
     case 'APPLICATION_SUBMITTED':
     case 'STATUS_UPDATE':
@@ -13,6 +14,8 @@ export function getNotificationActionLink(notification, user) {
       return isAdmin ? '/admin?tab=applicants' : '/dashboard?tab=interviews';
     case 'JOB_POSTED':
       return referenceId ? (isAdmin ? `/admin/jobs/${referenceId}/edit` : `/jobs/${referenceId}`) : null;
+    case 'JOB_ALERT':
+      return referenceId ? `/jobs/${referenceId}` : '/dashboard?tab=alerts';
     case 'NEW_MESSAGE':
       return isAdmin ? '/admin?tab=messages' : '/chat';
     default:
@@ -23,7 +26,10 @@ export function getNotificationActionLink(notification, user) {
 export function getNotificationActionLabel(type, isAdmin) {
   switch (type) {
     case 'NEW_APPLICATION':
+    case 'APPLICATION_WITHDRAWN':
       return 'View application';
+    case 'JOB_ALERT':
+      return 'View job';
     case 'APPLICATION_SUBMITTED':
     case 'STATUS_UPDATE':
       return 'View application';

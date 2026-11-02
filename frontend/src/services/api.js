@@ -1,12 +1,8 @@
 import axios from 'axios';
 import { authStorage } from './authStorage';
 
-/** Production Render API — used when VITE_API_URL is missing from the Vercel build. */
-const PROD_API_URL = 'https://globalco-job-board-api-vpee.onrender.com';
-
-export const API_BASE_URL =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? PROD_API_URL : 'http://localhost:8080');
+/** API gateway of the microservices backend. Production builds must set VITE_API_URL. */
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8090';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -23,15 +19,30 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    if (error.response?.status === 401) {
+    const sentToken = Boolean(error.config?.headers?.Authorization);
+    if (error.response?.status === 401 && sentToken) {
       authStorage.clear();
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
+      const { pathname, search } = window.location;
+      if (!pathname.startsWith('/login')) {
+        window.location.href = loginUrl(`${pathname}${search}`);
       }
     }
     return Promise.reject(error);
   }
 );
+
+export function loginUrl(returnTo) {
+  if (!returnTo || returnTo === '/' || returnTo.startsWith('/login')) return '/login';
+  return `/login?redirect=${encodeURIComponent(returnTo)}`;
+}
+
+/** Only same-site paths are honoured, so ?redirect= cannot send users to another origin. */
+export function safeRedirect(value, fallback) {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) {
+    return fallback;
+  }
+  return value;
+}
 
 export const unwrap = (res) => res.data?.data ?? res.data;
 

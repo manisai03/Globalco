@@ -1,0 +1,187 @@
+# Full microservices stack:  docker compose up -d --build   (from the backend/ folder)
+# Gateway: http://localhost:8090   Eureka: http://localhost:8761   RabbitMQ UI: http://localhost:15672
+# Point the frontend at the gateway: VITE_API_URL=http://localhost:8090
+#
+# Every Spring container is health-checked on /actuator/health/readiness (see the Dockerfile HEALTHCHECK, which reads
+# PORT), and dependants wait for service_healthy, so the gateway only starts once the services can answer.
+
+x-service: &service
+  build:
+    context: .
+  restart: unless-stopped
+  # Leaves time for graceful shutdown (in-flight requests finish, 20 s) before Docker kills the container.
+  stop_grace_period: 30s
+  environment: &service-env
+    DB_HOST: mysql
+    DB_PORT: 3306
+    DB_USERNAME: root
+    DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-jobboard}
+    RABBITMQ_HOST: rabbitmq
+    EUREKA_URL: http://discovery-server:8761/eureka
+    JWT_SECRET: ${JWT_SECRET:-globalco-job-board-super-secret-key-change-in-production-min-256-bits}
+    INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-local-dev-internal-token-change-me}
+    APP_ENV: ${APP_ENV:-local}
+    JAVA_OPTS: -XX:MaxRAMPercentage=75 -Xss512k
+  depends_on: &service-deps
+    mysql:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+    discovery-server:
+      condition: service_healthy
+  deploy:
+    resources:
+      limits:
+        memory: 512m
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-jobboard}
+    ports:
+      - "3307:3306"   # 3307 on the host so it doesn't clash with a locally installed MySQL
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  discovery-server:
+    build:
+      context: .
+      args:
+        MODULE: discovery-server
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      PORT: 8761
+    ports:
+      - "8761:8761"
+
+  api-gateway:
+    build:
+      context: .
+      args:
+        MODULE: api-gateway
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      - "8090:8090"
+    environment:
+      PORT: 8090
+      EUREKA_URL: http://discovery-server:8761/eureka
+      JWT_SECRET: ${JWT_SECRET:-globalco-job-board-super-secret-key-change-in-production-min-256-bits}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      APP_ENV: ${APP_ENV:-local}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-local-dev-internal-token-change-me}
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      job-service:
+        condition: service_healthy
+      application-service:
+        condition: service_healthy
+      messaging-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+
+  auth-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        MODULE: auth-service
+    environment:
+      <<: *service-env
+      PORT: 9001
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+    volumes:
+      - uploads:/app/uploads
+
+  job-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        MODULE: job-service
+    environment:
+      <<: *service-env
+      PORT: 9002
+
+  application-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        MODULE: application-service
+    environment:
+      <<: *service-env
+      PORT: 9003
+
+  messaging-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        MODULE: messaging-service
+    environment:
+      <<: *service-env
+      PORT: 9004
+
+  notification-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        MODULE: notification-service
+    environment:
+      <<: *service-env
+      PORT: 9005
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-noreply@jobboard.app}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      LOG_OTP_WHEN_UNCONFIGURED: ${LOG_OTP_WHEN_UNCONFIGURED:-true}
+
+  ai-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        MODULE: ai-service
+    environment:
+      <<: *service-env
+      PORT: 9006
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_ENABLED: ${OPENAI_ENABLED:-false}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+
+volumes:
+  mysql-data:
+  uploads:

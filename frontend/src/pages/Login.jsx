@@ -5,7 +5,8 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
+import { safeRedirect } from '../services/api';
 import AuthShell from '../components/common/AuthShell';
 import PasswordInput from '../components/common/PasswordInput';
 import { getApiErrorMessage } from '../utils/apiError';
@@ -33,9 +34,8 @@ export default function Login() {
     try {
       const user = await login(normalizeEmail(form.email), form.password);
       toast.success('Welcome back!');
-      const redirect = searchParams.get('redirect');
-      const safeRedirect = redirect && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : null;
-      navigate(safeRedirect || (user.role === 'ROLE_ADMIN' ? '/admin' : '/dashboard'));
+      const home = user.role === 'ROLE_ADMIN' ? '/admin' : '/dashboard';
+      navigate(safeRedirect(searchParams.get('redirect'), home), { replace: true });
     } catch (err) {
       toast.error(getApiErrorMessage(err, 'Login failed'));
     } finally {

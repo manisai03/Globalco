@@ -1,8 +1,9 @@
 # Deployment Guide
 
-Production deployment for the Job Board platform — Render (backend), Vercel (frontend), Railway (MySQL).
+Production deployment for the Job Board platform: **microservices on Render** (Docker), **frontend on Vercel**,
+MySQL (e.g. Railway) and RabbitMQ (e.g. CloudAMQP).
 
-**Assessment checklist:** [SUBMISSION.md](SUBMISSION.md) · **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md)
+**Assessment checklist:** [SUBMISSION.md](SUBMISSION.md) · **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) · **Local setup:** [microservices/RUNNING.md](microservices/RUNNING.md)
 
 ---
 
@@ -11,8 +12,7 @@ Production deployment for the Job Board platform — Render (backend), Vercel (f
 | Service | URL | Status |
 |---------|-----|--------|
 | **GitHub** | https://github.com/manisai03/Globalco | Active |
-| **Backend (Render)** | https://globalco-job-board-api-vpee.onrender.com | Deployed |
-| **Health check** | https://globalco-job-board-api-vpee.onrender.com/api/public/health | `{"status":"UP"}` |
+| **Backend (Render)** | https://globalco-job-board-api-vpee.onrender.com | Earlier single-app build; replace with the gateway URL after deploying below |
 | **Frontend (Vercel)** | `https://YOUR-PROJECT.vercel.app` | Deploy and add URL |
 
 ---
@@ -20,60 +20,80 @@ Production deployment for the Job Board platform — Render (backend), Vercel (f
 ## Architecture
 
 ```
-GitHub (main) → GitHub Actions → Render (API) + Vercel (SPA)
-                                      ↓
-                               Railway MySQL
-                                      ↓
-                               Brevo (email OTP)
-                               Cloudinary (avatars, optional)
+GitHub (main) → GitHub Actions CI → Deploy workflow
+                                     ├─ Render deploy hooks → jobboard-gateway (public)
+                                     │                        jobboard-discovery, -auth, -jobs, -applications,
+                                     │                        -messaging, -notifications, -ai (private network)
+                                     └─ Vercel → React SPA (VITE_API_URL = gateway URL)
+
+Services → MySQL (5 schemas) · RabbitMQ (CloudAMQP) · Brevo (email) · Cloudinary (avatars)
 ```
 
 ---
 
-## 1. Database (Railway MySQL)
+## 1. Infrastructure
 
-1. Create project at [railway.app](https://railway.app) → **Provision MySQL**
-2. Copy connection details from **Connect** tab
-3. Build JDBC URL:
-   ```
-   jdbc:mysql://HOST:PORT/DATABASE?useSSL=true&allowPublicKeyRetrieval=true&serverTimezone=UTC
-   ```
-4. Optionally run `database/schema.sql` — JPA `ddl-auto: update` also creates tables
+### MySQL
+1. Create a MySQL 8 instance (e.g. [railway.app](https://railway.app) → **Provision MySQL**).
+2. Note host, port, user, password. The user needs `CREATE DATABASE` rights: services create
+   `jobboard_auth`, `jobboard_jobs`, `jobboard_applications`, `jobboard_messaging`, `jobboard_notifications` on first start,
+   and Hibernate creates the tables.
+
+### RabbitMQ
+1. Create a free instance at [cloudamqp.com](https://www.cloudamqp.com) (plan "Little Lemur").
+2. From its AMQP URL `amqps://USER:PASSWORD@HOST/VHOST`, note host, user, password and vhost. Use port **5671** with TLS.
+   Queues and exchanges are declared by the services automatically.
 
 ---
 
-## 2. Backend (Render)
+## 2. Services (Render Blueprint)
 
-### Option A — Blueprint (recommended)
-1. [dashboard.render.com](https://dashboard.render.com) → **New** → **Blueprint**
-2. Connect repo `manisai03/Globalco` → applies `render.yaml`
+1. [dashboard.render.com](https://dashboard.render.com) → **New** → **Blueprint** → connect `manisai03/Globalco`.
+   Render reads `render.yaml` and creates:
 
-### Option B — Manual
-- Runtime: **Docker**
-- Dockerfile path: `backend/Dockerfile`
-- Docker context: `backend`
-- Health check: `/api/public/health`
+   | Render service | Type | Module |
+   |---|---|---|
+   | `jobboard-gateway` | Web (public) | api-gateway |
+   | `jobboard-discovery` | Private service | discovery-server |
+   | `jobboard-auth`, `jobboard-jobs`, `jobboard-applications`, `jobboard-messaging`, `jobboard-notifications`, `jobboard-ai` | Private services | the six domain services |
 
-### Environment variables
+   Each builds `backend/Dockerfile`; the `MODULE` env var is passed as a Docker build argument and selects the module.
 
-| Variable | Value |
-|----------|--------|
-| `SPRING_PROFILES_ACTIVE` | `prod` |
-| `DATABASE_URL` | JDBC URL from Railway |
-| `DATABASE_USERNAME` | MySQL user |
-| `DATABASE_PASSWORD` | MySQL password |
-| `JWT_SECRET` | Long random string (256+ bits) |
-| `CORS_ORIGINS` | `https://your-app.vercel.app` |
-| `BREVO_API_KEY` | Brevo API key (`xkeysib-...`) |
-| `MAIL_FROM` | Verified sender email in Brevo |
-| `CLOUDINARY_CLOUD_NAME` | Optional — profile pictures |
-| `CLOUDINARY_API_KEY` | Optional |
-| `CLOUDINARY_API_SECRET` | Optional |
+2. Fill in the **`jobboard-shared`** environment group. `JWT_SECRET` and `INTERNAL_API_TOKEN` are generated, and
+   `APP_ENV=production` is preset; with it, any service started with a default or short secret refuses to boot.
 
-> Render free tier blocks SMTP. Use **Brevo HTTP API** (`BREVO_API_KEY`), not SMTP keys.
+   | Variable | Value |
+   |---|---|
+   | `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` | From MySQL |
+   | `RABBITMQ_HOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `RABBITMQ_VHOST` | From CloudAMQP (`RABBITMQ_PORT=5671`, `RABBITMQ_SSL=true` preset) |
+   | `EUREKA_URL` | `http://jobboard-discovery:8761/eureka`. Check the discovery service's internal address in the Render dashboard and adjust if it differs |
 
-### Deploy hook
-Render → Service → **Settings** → **Deploy Hook** → copy URL → GitHub secret `RENDER_DEPLOY_HOOK`
+3. Per-service variables:
+
+   | Service | Variables |
+   |---|---|
+   | gateway, messaging | `CORS_ORIGINS` = your Vercel URL (comma-separate any preview URLs; `*.vercel.app` is no longer allowed by default) |
+   | gateway | `TRUST_FORWARDED_FOR=true` (preset in `render.yaml`, so rate limits see the real client IP) |
+   | auth | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (avatars) |
+   | notifications | `BREVO_API_KEY` (`xkeysib-...`), `MAIL_FROM` (verified Brevo sender) |
+   | ai | `OPENAI_API_KEY`, `OPENAI_ENABLED` (optional) |
+
+4. Deploy, then check `https://<gateway>.onrender.com/api/public/health`.
+
+> **Cost:** Render private services have no free plan (Starter, about $7/month each, ×8). A cheaper option is a single
+> small VM (2 GB+ RAM) running `backend/docker-compose.yml` behind a reverse proxy; only port 8090 needs to be public.
+> Render's free web services sleep when idle, which breaks Eureka registration, so they are not suitable here.
+
+> Render free tier blocks SMTP. Use the **Brevo HTTP API** (`BREVO_API_KEY`), not SMTP keys.
+
+### Deploy hooks
+`render.yaml` sets `autoDeploy: false`, so deploys happen only after CI passes. For each service: **Settings** →
+**Deploy Hook** → copy the URL. Put all 8 URLs, one per line, in the GitHub secret `RENDER_DEPLOY_HOOKS`.
+
+### Moving existing data
+If you have data from the earlier single-app database (`jobboard`), copy it once with
+`backend/scripts/migrate-from-monolith.sql` after the services have started (they create the tables). See
+[microservices/MIGRATION.md](microservices/MIGRATION.md).
 
 ---
 
@@ -85,14 +105,14 @@ Render → Service → **Settings** → **Deploy Hook** → copy URL → GitHub 
    - **Framework:** Vite
    - **Build Command:** `npm run build`
    - **Output Directory:** `dist`
-3. Environment variable:
+3. Environment variable (required; the build has no production default):
 
 | Name | Value |
 |------|--------|
-| `VITE_API_URL` | `https://globalco-job-board-api-vpee.onrender.com` |
+| `VITE_API_URL` | Gateway URL, e.g. `https://jobboard-gateway.onrender.com` |
 
-4. Deploy → copy production URL
-5. Update Render `CORS_ORIGINS` with your Vercel URL → redeploy backend
+4. Deploy → copy the production URL
+5. Set `CORS_ORIGINS` on the gateway and messaging service to that URL → redeploy them
 
 ---
 
@@ -102,11 +122,11 @@ Render → Service → **Settings** → **Deploy Hook** → copy URL → GitHub 
 
 | Secret | Purpose |
 |--------|---------|
-| `RENDER_DEPLOY_HOOK` | Trigger Render redeploy on push to `main` |
+| `RENDER_DEPLOY_HOOKS` | Deploy-hook URLs of all Render services, one per line |
 | `VERCEL_TOKEN` | [Vercel account tokens](https://vercel.com/account/settings/tokens) |
 | `VERCEL_ORG_ID` | From `vercel link` → `.vercel/project.json` |
 | `VERCEL_PROJECT_ID` | Same as above |
-| `VITE_API_URL` | `https://globalco-job-board-api-vpee.onrender.com` |
+| `VITE_API_URL` | Gateway URL |
 
 Get Vercel IDs locally:
 ```bash
@@ -115,49 +135,38 @@ npx vercel link
 cat .vercel/project.json
 ```
 
-Until secrets are set, the deploy workflow skips Vercel with a warning (CI still runs).
-
 ---
 
 ## 5. CI/CD workflows
 
 | Workflow | Trigger | Actions |
 |----------|---------|---------|
-| `ci.yml` | Push/PR to main | Backend: JDK 21, MySQL service, `mvn package`; Frontend: Node 20, `npm ci && npm run build` |
-| `deploy.yml` | Push to main | `curl` Render hook; Vercel `pull → build → deploy --prebuilt` |
+| `ci.yml` | Push/PR to main | Services: JDK 21, `mvn verify`, `docker compose config` + `build`; Frontend: Node 24, `npm ci`, lint, build |
+| `deploy.yml` | CI success on main | `curl` every Render deploy hook; Vercel `pull → build → deploy --prebuilt` |
 
 ---
 
 ## 6. Verify deployment
 
-1. **Health:** `GET /api/public/health` → `{"status":"UP"}`
-2. **Frontend:** Vercel URL loads home page
-3. **Register:** Create recruiter + candidate accounts
-4. **Recruiter:** Set company in profile → post job via AI generator
-5. **Candidate:** Apply → check match score
-6. **Chat:** Recruiter views application → sends message → candidate replies
-7. **CI:** GitHub Actions tab shows green builds
+1. **Health:** `GET https://<gateway>/api/public/health` → `{"status":"UP"}`
+2. **Smoke test:** `.\backend\scripts\smoke-test.ps1 -Gateway https://<gateway>` (creates throwaway accounts and a job, then deletes the job)
+3. **Frontend:** Vercel URL loads the home page; register, post a job, apply, chat
+4. **CI:** GitHub Actions shows green builds
 
 ---
 
 ## 7. Local development
 
-```bash
-# Backend (port 8080)
+See [microservices/RUNNING.md](microservices/RUNNING.md). In short:
+
+```powershell
 cd backend
-# Optional: mysql-local.yml, mail-local.yml, cloudinary-local.yml
-mvn spring-boot:run
+.\mvnw.cmd -B install -DskipTests
+docker run -d --name jobboard-rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3.13-management
+.\scripts\run-local.ps1 -DbPassword <mysql-root-password>
 
-# Frontend (port 5173)
-cd frontend
-cp .env.example .env   # VITE_API_URL=http://localhost:8080
-npm install && npm run dev
-```
-
-### Local production build test
-```bash
-cd backend && mvn clean package
-cd frontend && set VITE_API_URL=http://localhost:8080 && npm run build
+cd ..\frontend
+npm install && npm run dev      # VITE_API_URL=http://localhost:8090
 ```
 
 ---
@@ -166,12 +175,12 @@ cd frontend && set VITE_API_URL=http://localhost:8080 && npm run build
 
 | Issue | Fix |
 |-------|-----|
-| CORS errors on Vercel | Set `CORS_ORIGINS` on Render to exact Vercel URL |
-| 500 on job post | Check Render logs; `LegacySchemaMigration` repairs schema on boot |
-| OTP email not sent | Use `BREVO_API_KEY` (not SMTP key); verify `MAIL_FROM` in Brevo |
-| Render cold start | Free tier sleeps after inactivity — first request may take ~30s |
-| Chat not real-time | Check WebSocket URL uses `wss://` in production |
-| Company shows placeholder | Set real company in recruiter Profile; restart clears legacy data |
+| Gateway returns 503 | Services not registered yet, or `EUREKA_URL` is wrong. Check the discovery service logs |
+| CORS errors on Vercel | Set `CORS_ORIGINS` on the gateway (and messaging, for WebSocket) to the exact Vercel URL |
+| Services can't connect to RabbitMQ | CloudAMQP needs port 5671, `RABBITMQ_SSL=true`, and `RABBITMQ_VHOST` (usually equal to the username) |
+| OTP email not sent | Use `BREVO_API_KEY` (not an SMTP key); verify `MAIL_FROM` in Brevo; failed sends wait in `notification-service.events.dlq` |
+| 401 right after deploying | Users must log in again if their token was issued by the earlier build |
+| Chat not real-time | WebSocket URL must use `wss://`; run messaging as a single instance |
 
 ---
 

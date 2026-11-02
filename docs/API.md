@@ -1,7 +1,9 @@
 # API Documentation
 
-**Base URL (dev):** `http://localhost:8080`  
-**Base URL (prod):** `https://globalco-job-board-api-vpee.onrender.com`
+**Base URL (dev):** `http://localhost:8090` (API gateway)  
+**Base URL (prod):** the deployed gateway URL (see [DEPLOYMENT.md](DEPLOYMENT.md))  
+Every endpoint below is served through the gateway, which routes it to the owning service; see
+[microservices/SERVICES.md](microservices/SERVICES.md#gateway-routes).
 
 All protected endpoints require: `Authorization: Bearer <token>`
 
@@ -15,6 +17,10 @@ All protected endpoints require: `Authorization: Bearer <token>`
 ```
 
 **Workflow context:** See [WORKFLOWS.md](WORKFLOWS.md) for when each endpoint is called.
+
+**Interactive docs:** `http://localhost:8090/swagger-ui.html` serves the generated OpenAPI spec of every service
+(raw specs at `/v3/api-docs/<service-name>`). Every response has an `X-Request-Id` header; send your own (letters,
+digits, `.`, `_`, `-`, up to 64 characters) to correlate a call across services.
 
 ---
 
@@ -31,6 +37,10 @@ All protected endpoints require: `Authorization: Bearer <token>`
   "location": "Hyderabad"
 }
 ```
+
+Registering with an email that already has an account returns the same success response as a new signup (the
+account is not changed, and its owner gets an email instead), so the endpoint can't be used to find out who has an
+account. Validation errors are still `400`.
 
 Recruiter registration — add:
 ```json
@@ -59,6 +69,9 @@ Response:
 }
 ```
 
+A wrong password returns `400`. After 5 wrong passwords for the same email within 15 minutes, login returns `429`
+with a `Retry-After` header (seconds) for 15 minutes, even with the right password. A password reset lifts the lock.
+
 ### POST /api/auth/forgot-password
 ```json
 { "email": "user@example.com" }
@@ -73,7 +86,25 @@ Sends 6-digit OTP (10-minute expiry) via Brevo. Always returns success, whether 
   "newPassword": "newpassword123"
 }
 ```
-After 5 incorrect attempts, the OTP is invalidated and a new one must be requested.
+After 5 incorrect attempts, the OTP is invalidated and a new one must be requested. A successful reset signs the
+account out everywhere (existing tokens stop working within 30 seconds).
+
+Passwords must be 8–72 characters.
+
+### Rate limits (gateway)
+
+Per client IP. Over the limit the gateway answers `429` with a `Retry-After` header (seconds) and
+`{ "success": false, "message": "Too many requests. Please wait a moment and try again." }`.
+
+| Endpoint | Limit |
+|----------|-------|
+| `POST /api/auth/register` | 20 per hour |
+| `POST /api/auth/login` | 30 per minute |
+| `POST /api/auth/forgot-password` | 5 per 15 minutes |
+| `POST /api/auth/reset-password` | 10 per 15 minutes |
+| `POST /api/messages/ws-ticket` | 30 per minute |
+| `POST /api/messages` | 60 per minute |
+| `POST /api/applications/**` | 30 per minute |
 
 ---
 
@@ -83,9 +114,10 @@ After 5 incorrect attempts, the OTP is invalidated and a new one must be request
 |--------|----------|------|-------------|
 | GET | `/api/users/me` | ✓ | Get current profile |
 | PUT | `/api/users/me` | ✓ | Update profile |
-| POST | `/api/users/me/resume` | ✓ | Upload resume (multipart) |
+| POST | `/api/users/me/resume` | ✓ | Upload resume (multipart, `.pdf`/`.doc`/`.docx`, max 10 MB). The content must match the extension, otherwise `400` |
 | POST | `/api/users/me/avatar` | ✓ | Upload avatar to Cloudinary |
-| PUT | `/api/users/me/password` | ✓ | Change password |
+| PUT | `/api/users/me/password` | ✓ | Change password. Returns `{ "token": "..." }`; every older token is revoked, so store the new one |
+| DELETE | `/api/users/me` | ✓ | Delete own account. Body `{ "password": "..." }`. Erases the account's jobs, applications, messages, notifications and files in every service |
 
 ---
 
@@ -106,7 +138,13 @@ After 5 incorrect attempts, the OTP is invalidated and a new one must be request
 | PATCH | `/api/jobs/{id}/reopen` | Admin | Reopen posting |
 
 ### Query parameters (GET /api/jobs)
-`search`, `location`, `jobType`, `experienceLevel`, `category`, `minSalary`, `maxSalary`, `status`, `sort`, `page` (default 0), `size` (default 12, max 50)
+`search`, `location`, `jobType`, `experienceLevel`, `category`, `minSalary`, `maxSalary`, `postedWithin`
+(`today`, `3days`, `week`), `sort` (`recent`, `salary_asc`, `salary_desc`, `title`), `page` (default 0), `size`
+(default 12, max 50). Only open jobs are listed.
+
+### POST/PUT /api/jobs
+The company always comes from the recruiter's profile (a `company` field in the body is ignored), and recruiters can't
+set `featured`. `salaryMin` must not exceed `salaryMax` (`400` otherwise).
 
 ---
 
@@ -122,9 +160,21 @@ After 5 incorrect attempts, the OTP is invalidated and a new one must be request
 | PATCH | `/api/applications/{id}/status` | Admin | Update status |
 | POST | `/api/applications/interviews` | Admin | Schedule interview |
 
-**Status values:** `PENDING`, `SHORTLISTED`, `REJECTED`, `INTERVIEW_SCHEDULED`, `HIRED`, `WITHDRAWN`
+**Status values:** `PENDING`, `SHORTLISTED`, `REJECTED`, `INTERVIEW_SCHEDULED`, `HIRED`, `WITHDRAWN`, `JOB_REMOVED`
 
-Recruiters can set any status except `WITHDRAWN`, and can't change an application the candidate has withdrawn. Candidates can withdraw only while the status is `PENDING`, `SHORTLISTED`, or `INTERVIEW_SCHEDULED`. Applying again after withdrawing reopens the same application as `PENDING`.
+Recruiters may only make these status changes (anything else is `400`):
+
+| From | To |
+|------|----|
+| `PENDING` | `SHORTLISTED`, `REJECTED` |
+| `SHORTLISTED` | `REJECTED`, `HIRED` |
+| `INTERVIEW_SCHEDULED` | `SHORTLISTED`, `REJECTED`, `HIRED` |
+| `REJECTED` | `SHORTLISTED` |
+
+`INTERVIEW_SCHEDULED` is set only by scheduling an interview. `HIRED`, `WITHDRAWN` and `JOB_REMOVED` are final;
+rejecting or hiring cancels any scheduled interview. Candidates can withdraw while the status is `PENDING`,
+`SHORTLISTED`, or `INTERVIEW_SCHEDULED` (the recruiter is notified). Applying again after withdrawing reopens the same
+application as `PENDING`; this is allowed once per job. Withdrawn applications aren't counted in recruiter analytics.
 
 ### PATCH /api/applications/{id}/status
 ```json
@@ -140,6 +190,8 @@ Recruiters can set any status except `WITHDRAWN`, and can't change an applicatio
   "notes": "Optional"
 }
 ```
+`scheduledAt` must be in the future. Scheduling again (rescheduling) cancels the previous interview, so an application
+has at most one scheduled interview.
 
 ---
 
@@ -148,8 +200,12 @@ Recruiters can set any status except `WITHDRAWN`, and can't change an applicatio
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | GET | `/api/saved-searches` | ✓ | List with live match counts |
-| POST | `/api/saved-searches` | ✓ | Save filter set as alert |
+| POST | `/api/saved-searches` | ✓ | Save filter set as alert (same filters as `GET /api/jobs`, including `postedWithin`) |
+| PATCH | `/api/saved-searches/{id}` | ✓ | Pause or resume the alert. Body `{ "alertsEnabled": false }` |
 | DELETE | `/api/saved-searches/{id}` | ✓ | Remove saved search |
+
+When a new job is posted, every candidate with an active saved search that matches it gets a `JOB_ALERT`
+notification linking to the job. Another candidate's saved search answers `404`.
 
 ---
 
@@ -207,7 +263,7 @@ Recruiters can set any status except `WITHDRAWN`, and can't change an applicatio
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | GET | `/api/admin/dashboard` | Admin | Dashboard analytics |
-| GET | `/api/admin/applicants` | Admin | All applicants (masked until viewed) |
+| GET | `/api/admin/applicants` | Admin | Paged applicants, newest first (masked until viewed). `?page=0&size=20` (max 100), `search` (job title, or name/email of unlocked candidates), `jobId`. Returns `{ content, page, size, totalElements, totalPages }` |
 | GET | `/api/admin/jobs` | Admin | Recruiter's jobs |
 | GET | `/api/admin/analytics/applications` | Admin | Status analytics (`?period=week\|month\|year`) |
 
@@ -223,13 +279,12 @@ Recruiters can set any status except `WITHDRAWN`, and can't change an applicatio
 {
   "jobTitle": "Java Developer",
   "skills": "Java, Spring Boot, React",
-  "company": "XPO",
   "location": "Hyderabad",
   "experienceLevel": "Mid-Level"
 }
 ```
 
-Company/location auto-enriched from recruiter profile if omitted.
+The company always comes from the recruiter's profile; location falls back to the profile if omitted.
 
 ---
 
@@ -237,7 +292,7 @@ Company/location auto-enriched from recruiter profile if omitted.
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| GET | `/api/files/{subfolder}/{filename}` | ✓ | Download resume/uploads |
+| GET | `/api/files/{subfolder}/{filename}` | ✓ | Download uploads. A resume is served only to its owner or to a recruiter who has opened an application from that candidate; anyone else gets `404`. Always sent as a download (`Content-Disposition: attachment`, `nosniff`, sandboxing CSP) |
 
 ---
 
@@ -254,7 +309,12 @@ Company/location auto-enriched from recruiter profile if omitted.
 
 | Endpoint | Auth | Description |
 |----------|------|-------------|
-| `ws://<host>/ws/chat?token=<JWT>` | JWT in query | Real-time chat delivery |
+| `POST /api/messages/ws-ticket` | JWT (header) | Returns `{ "ticket": "..." }`: single use, valid 30 seconds |
+| `ws://<host>/ws/chat?ticket=<ticket>` | Ticket in query | Real-time chat delivery |
+
+Browsers can't set headers on a WebSocket handshake, so the client fetches a fresh ticket before every connect; the
+JWT never goes in the URL. A missing, reused or expired ticket is refused. When the JWT the ticket was issued for
+expires, the server closes the socket with code `4001`. Deleting the account closes it with `1008`.
 
 On new message, server pushes `{ type: "NEW_MESSAGE", data: MessageResponse }`.
 
@@ -270,4 +330,5 @@ On new message, server pushes `{ type: "NEW_MESSAGE", data: MessageResponse }`.
 }
 ```
 
-Common HTTP codes: `400` validation, `401` unauthorized, `403` forbidden, `404` not found, `500` server error.
+Common HTTP codes: `400` validation, `401` unauthorized, `403` forbidden, `404` not found, `429` too many requests
+(see rate limits) or login attempts, `503` a downstream service is unavailable, `500` server error.

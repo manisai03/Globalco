@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import api, { unwrap } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/common/EmptyState';
 import { getNotificationActionLabel, getNotificationActionLink } from '../utils/notificationLinks';
